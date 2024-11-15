@@ -4,7 +4,7 @@
 
 一个轻量级全链路可基于二次开发的大模型应用开发项目 🚀
 
-基于 Dify 、Ollama 、Sanic 和 NL2SQL 📊 等技术构建的一站式大模型应用开发项目，采用 Vue3、TypeScript 和 Vite 5 打造现代UI。它支持通过 ECharts 📈 实现基于大模型的数据图形化问答，具备处理 CSV 文件 📂 表格数据查询的能力。同时，集成了第三方 RAG 系统 和 公网检索 🌐，以支持广泛的通用问答。
+基于 Dify 、Ollama 、Sanic 和 Text2SQL 📊 等技术构建的一站式大模型应用开发项目，采用 Vue3、TypeScript 和 Vite 5 打造现代UI。它支持通过 ECharts 📈 实现基于大模型的数据图形化问答，具备处理 CSV 文件 📂 表格数据查询的能力。同时，集成了第三方 RAG 系统 和 公网检索 🌐，以支持广泛的通用问答。
 
 作为轻量级的大模型应用开发项目，Sanic-Web 🛠️ 支持快速迭代与扩展，助力大模型项目快速落地。🚀
 
@@ -12,13 +12,13 @@
 在线体验即将上线，敬请期待！
 
 🎉 **特性**
-- **核心技术栈**：Dify + Ollama + Sanic + NL2SQL
+- **核心技术栈**：Dify + Ollama + Sanic + Text2SQL
 - **UI 框架**：Vue 3 + TypeScript + Vite 5
 - **数据问答**：集成 ECharts大模型实现NL2SQL轻量级的数据图形化问答展示
 - **表格问答**：支持 CSV格式文件的上传与基于大模型总结预处理和NL2SQL的表格数据问答
 - **通用问答**：支持通用数据形式问答基于对接三方RAG系统+公网检索模式
 - **应用架构**：作为一个轻量级全链路一站式大模型应用开发框架方便扩展落地
-- **灵活部署**：支持 Docker 容器化部署，便于在各种环境中快速启动
+- **灵活部署**：支持大模型应用开发各依赖组件docker-compose一键拉起快速部署零配置
 
 🔧 **前置条件**
 - Python 3.8+
@@ -26,16 +26,43 @@
 - Node.js 18.12.x+
 - Pnpm 9.x
 - Dify 0.7.1+
+- Mysql 8.0+
 
-🔧 **大模型**
-- Ollama
-- qwen2/qwen2.5
+📚 **大模型部署**
+- [参考Ollama官网部署](https://ollama.com/docs/install)
+- 模型: Qwen2.5
 
 
 🚀 **快速开始**
-1. **安装依赖**  
-   使用 pnpm 安装前端和后端依赖：
+
+1. **启动服务**
    ```bash
-   pnpm install
-   cd backend
-   pip install -r requirements.txt
+   # 拉起dify服务
+   cd docker/dify
+   docker-compose up -d
+   
+   # 启动前后端服务
+   cd docker
+   docker compose up -d
+
+2. **数据初始化**
+   ```bash
+   cd docker
+   ./init.sh
+   
+   或执行
+   
+   python3 common/initialize_mysql.py
+
+
+🛠️ **本地开发**
+
+1. **后端依赖安装**  
+   - poetry安装 [参考poetry官方文档](https://python-poetry.org/docs/)
+   ```bash
+   # 安装项目依赖
+   poetry install
+
+2. **前端依赖安装**  
+- 前端项目基于chatgpt-vue3-light-mvp开源项目[参考chatgpt-vue3-light-mvp部署](https://github.com/pdsuwwz/chatgpt-vue3-light-mvp)
+
