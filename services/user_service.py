@@ -1,0 +1,154 @@
+import json
+import logging
+import os
+import traceback
+from datetime import datetime, timedelta
+
+import jwt
+
+from common.exception import MyException
+from common.mysql_util import MysqlUtil
+from constants.code_enum import SysCodeEnum
+
+logger = logging.getLogger(__name__)
+
+mysql_client = MysqlUtil()
+
+
+async def authenticate_user(username, password):
+    """验证用户凭据并返回用户信息或 None"""
+    sql = f"""select * from t_user where userName='{username}' and password='{password}'"""
+    report_dict = MysqlUtil().query_mysql_dict(sql)
+    if len(report_dict) > 0:
+        return report_dict[0]
+    else:
+        return False
+
+
+async def generate_jwt_token(user_id, username):
+    """生成 JWT token"""
+    payload = {"id": str(user_id), "username": username, "exp": datetime.utcnow() + timedelta(hours=24)}  # Token 过期时间
+    token = jwt.encode(payload, os.getenv("JWT_SECRET_KEY"), algorithm="HS256")
+    return token
+
+
+async def decode_jwt_token(token):
+    """解析 JWT token 并返回 payload"""
+    try:
+        # 使用与生成 token 时相同的密钥和算法来解码 token
+        payload = jwt.decode(token, key=os.getenv("JWT_SECRET_KEY"), algorithms=["HS256"])
+        # 检查 token 是否过期
+        if "exp" in payload and datetime.utcfromtimestamp(payload["exp"]) < datetime.utcnow():
+            raise jwt.ExpiredSignatureError("Token has expired")
+        return payload
+    except jwt.ExpiredSignatureError as e:
+        # 处理过期的 token
+        return None, 401, str(e)
+    except jwt.InvalidTokenError as e:
+        # 处理无效的 token
+        return None, 400, str(e)
+    except Exception as e:
+        # 处理其他可能的错误
+        return None, 500, str(e)
+
+
+async def get_user_info(request) -> dict:
+    """获取登录用户信息"""
+    token = request.headers.get("Authorization")
+
+    # 检查 Authorization 头是否存在
+    if not token:
+        logging.error("Authorization header is missing")
+        raise MyException(SysCodeEnum.c_401)
+
+    # 检查 Authorization 头格式是否正确
+    if not token.startswith("Bearer "):
+        logging.error("Invalid Authorization header format")
+        raise MyException(SysCodeEnum.c_400)
+
+    # 提取 token
+    token = token.split(" ")[1].strip()
+
+    # 检查 token 是否为空
+    if not token:
+        logging.error("Token is empty or whitespace")
+        raise MyException(SysCodeEnum.c_400)
+
+    try:
+        # 解码 JWT token
+        user_info = await decode_jwt_token(token)
+    except Exception as e:
+        logging.error(f"Failed to decode JWT token: {e}")
+        raise MyException(SysCodeEnum.c_401)
+
+    return user_info
+
+
+async def add_question_record(user_token, chat_id, question, t02_answer, t04_answer):
+    """
+    记录用户问答记录，如果记录已存在，则更新之；否则，创建新记录。
+    """
+    try:
+        # 解析token信息
+        user_dict = await decode_jwt_token(user_token)
+        user_id = user_dict["id"]
+
+        sql = f"select * from t_user_qa_record where user_id={user_id} and chat_id='{chat_id}'"
+        log_dict = mysql_client.query_mysql_dict(sql)
+        if len(log_dict) > 0:
+            sql = f"""update t_user_qa_record set to4_answer='{json.dumps(t04_answer, ensure_ascii=False)}' 
+                    where user_id={user_id} and chat_id='{chat_id}'"""
+            mysql_client.update(sql)
+        else:
+            insert_params = [user_id, chat_id, question, json.dumps(t02_answer, ensure_ascii=False)]
+            sql = f" insert into t_user_qa_record(user_id,chat_id,question,to2_answer) values (%s,%s,%s,%s)"
+            mysql_client.insert(sql=sql, params=insert_params)
+
+    except Exception as e:
+        traceback.print_exception(e)
+        logger.error(f"保存用户问答日志失败: {e}")
+
+
+async def delete_user_record(user_id, record_ids):
+    """
+    删除用户问答记录
+    :param user_id: 用户ID
+    :param record_ids: 要删除的记录ID列表
+    :return: None
+    """
+    # 确保 record_ids 是一个非空列表
+    if not isinstance(record_ids, list) or not record_ids:
+        raise ValueError("record_ids 必须是非空列表")
+
+    # 创建 IN 子句和对应的参数列表
+    in_clause = ", ".join(["%s"] * len(record_ids))
+    sql = f"""
+        DELETE FROM t_user_qa_record
+        WHERE user_id = %s AND id IN ({in_clause})
+    """
+
+    # 将 user_id 添加到参数列表的开头
+    params = [user_id] + record_ids
+
+    # 执行更新操作
+    mysql_client.update_params(sql=sql, params=params)
+
+
+async def query_user_record(user_id, page, limit):
+    """
+    根据用户id查询用户问答记录
+    :param page
+    :param limit
+    :param user_id
+    :return:
+    """
+    sql = f"""select count(1) as count from t_user_qa_record  where user_id={user_id}"""
+    total_count = mysql_client.query_mysql_dict(sql)[0]["count"]
+    total_pages = (total_count + limit - 1) // limit  # 计算总页数
+
+    # 计算偏移量
+    offset = (page - 1) * limit
+    sql = f"""select * from t_user_qa_record where user_id={user_id} order by id LIMIT {limit} OFFSET {offset}"""
+    records = mysql_client.query_mysql_dict(sql)
+
+    return {"records": records, "current_page": page, "total_pages": total_pages, "total_count": total_count}

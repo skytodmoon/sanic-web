@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "@stylistic/indent": "off",
+    "@typescript-eslint/indent": "off"
+  }
+}

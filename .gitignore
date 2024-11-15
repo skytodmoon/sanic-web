@@ -1,0 +1,14 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+tests/
+docker/volume/
+
+web/node_modules/
+web/dist/
+web/.vscode/
+
+.DS_Store/
+.idea/

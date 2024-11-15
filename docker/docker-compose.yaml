@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  chat-web:
+    image: chat-vue3-mvp:1.0
+    container_name: chat-vue3-mvp
+    ports:
+      - "8081:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - chat-service
+    networks:
+      - dify_service_default
+
+  chat-service:
+    image: sanic-app:1.0
+    container_name: sanic-app
+    ports:
+      - "8088:8088"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - dify_service_default
+
+  mysql:
+    image: mysql:latest
+    container_name: chat-db
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=1
+      - CHARACTER_SET_SERVER=utf8mb4
+      - COLLATION_SERVER=utf8mb4_unicode_ci
+    volumes:
+      - ./volume/mysql/data:/var/lib/mysql
+      - ./my.cnf:/etc/mysql/conf.d/my.cnf
+    networks:
+      - dify_service_default
+
+networks:
+  dify_service_default:
+    external: true
+    driver: bridge
