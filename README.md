@@ -21,7 +21,7 @@
 - **灵活部署**：支持大模型应用开发各依赖组件docker-compose一键拉起快速部署零配置
 
 # 运行效果
-![image](https://github.com/apconw/sanic-web/blob/master/images/chat-01.png?raw=true)
+![image](https://raw.githubusercontent.com/apconw/sanic-web/22637f9cfa16aeea727ffed8890899d54c040ce8/images/chat-01.png?token=GHSAT0AAAAAAC2QNOLDA7O5NKEH5DSH5JNMZZXCM6A)
 
 # 🔧 **前置条件**
 - Python 3.8+
