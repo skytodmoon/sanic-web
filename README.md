@@ -24,6 +24,7 @@
 ![image](./images/chat-02.png)
 ![image](./images/chat-03.png)
 
+https://github.com/user-attachments/assets/42e8254f-d1bc-42e0-88dd-90279d040ae0
 https://github.com/apconw/sanic-web/blob/master/images/vedio.mp4
 
 # 🔧 **前置条件**
