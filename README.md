@@ -24,6 +24,8 @@
 ![image](./images/chat-02.png)
 ![image](./images/chat-03.png)
 
+https://github.com/apconw/sanic-web/blob/master/images/vedio.mp4
+
 # 🔧 **前置条件**
 * Python 3.8+
 * Poetry 1.8.3+
