@@ -24,11 +24,9 @@
 ![image](./images/chat-02.png)
 ![image](./images/chat-03.png)
 
-```HTML
-<video width="320" height="240" controls>
-    <source src="./images/vedio.mp4" type="video/mp4">
-</video>
-```
+![Alt text](./images/vedio.mp4)
+
+
 
 # 🔧 **前置条件**
 * Python 3.8+
