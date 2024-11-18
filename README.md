@@ -1,6 +1,6 @@
 # 大模型数据助手
 
-💡 **项目简介**
+🌟 **项目简介**
 
 一个轻量级、支持全链路且易于二次开发的大模型应用项目
 
@@ -15,10 +15,10 @@
 ![image](./images/app-01.png)
 
 ## 🎉 **特性**
-- **核心技术栈**：Dify + Ollama + Sanic + Text2SQL
+- **核心技术栈**：Dify + Ollama + Sanic + Text2SQL + LLM
 - **UI 框架**：Vue 3 + TypeScript + Vite 5
-- **数据问答**：集成 ECharts大模型实现NL2SQL轻量级的数据图形化问答展示
-- **表格问答**：支持 CSV格式文件的上传与基于大模型总结预处理和NL2SQL的表格数据问答
+- **数据问答**：集成 ECharts大模型实现Text2SQL轻量级的图形化数据问答展示
+- **表格问答**：支持 CSV格式文件的上传与基于大模型总结预处理和Text2SQL的表格数据问答
 - **通用问答**：支持通用数据形式问答基于对接三方RAG系统+公网检索模式
 - **应用架构**：作为一个轻量级全链路一站式大模型应用开发框架方便扩展落地
 - **灵活部署**：支持大模型应用开发各依赖组件docker-compose一键拉起快速部署零配置
@@ -39,10 +39,11 @@
 ## 🔧 **前置条件**
 * Python 3.8+
 * Poetry 1.8.3+
-* Node.js 18.12.x+
-* Pnpm 9.x
 * Dify 0.7.1+
 * Mysql 8.0+
+* Node.js 18.12.x+
+* Pnpm 9.x
+
 
 📚 **大模型部署**
 - [参考Ollama官网部署](https://ollama.com/docs/install)
@@ -51,18 +52,18 @@
 
 ## 🚀 **快速开始**
 
-   - 为了兼顾第一次接触大模型应用的同学，我们提供了一键拉起Dify服务零配置，同时启动前端方式，方便大家快速体验。
-   - 如果本地已经安装过Dify的同学，可以跳过安装Dify的步骤，直接导入***数据问答流程画布***进行相应配置即可。
-   - 如果需要安装最新版Dify的同学,可以参考官方文档[Dify文档](https://docs.dify.ai/zh-hans)。
+   - 为了兼顾第一次接触大模型应用的同学，我们提供了一键拉起Dify服务零配置，同时启动服务方式，方便大家快速体验。
+   - 如果本地已经安装过Dify的同学，可以跳过安装Dify的步骤，直接导入画布***docker/dify/数据问答.yml***修改DiFyAppEnum/DATABASE_QA密钥key即可。
+   - 如果需要安装最新版Dify的同学,可以参考官方文档[Dify官方文档](https://docs.dify.ai/zh-hans)。
    - 具体步骤如下：
 
 1. **启动服务**
    ```bash
    # 拉起dify服务
-   cd docker/dify
+   cd docker/dify/docker
    docker-compose up -d
    
-   # 启动前后端服务
+   # 拉起前后端服务和中间件
    cd docker
    docker compose up -d
 
@@ -81,11 +82,15 @@
 
 ## 🛠️ **本地开发**
 - 需要安装项目所有前置依赖、参考上面前置条件
+- 编辑项目根目录下的.env文件，***修改ENV=dev***，并保存。
 
 1. **后端依赖安装**  
    - poetry安装 [参考poetry官方文档](https://python-poetry.org/docs/)
    ```bash
-   # 安装项目依赖
+   # 安装poetry
+   pip install poetry
+   
+   # 安装依赖根目录执行
    poetry install
    
 2. **初始化数据库**
@@ -95,9 +100,25 @@
 
 3. **前端依赖安装**  
    - 前端基于chatgpt-vue3-light-mvp开源项目[参考chatgpt-vue3-light-mvp安装](https://github.com/pdsuwwz/chatgpt-vue3-light-mvp)
-   
+   ```bash
+   # 安装前端依赖&启动服务
+   cd web
+   pnpm i
+   pnpm dev
+
 4. **访问服务**
  - 前端服务：http://localhost:2048
+
+## 🐳 构建镜像
+- 编辑项目根目录下的.env文件，***修改ENV=test***，并保存。
+- 执行构建命令：
+   ```bash
+   # 构建前端镜像 
+   make web-build
+  
+   # 构建后端镜像
+   make server-build
+
 
 ## 🌹 支持
 
