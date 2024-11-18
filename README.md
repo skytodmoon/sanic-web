@@ -32,7 +32,7 @@
 
 在开始之前，请确保您的开发环境满足以下最低配置要求：
 
-- **操作系统**：Windows 10/11, macOs M1系列, Centos/Ubuntu
+- **操作系统**：Windows 10/11, macOs M系列, Centos/Ubuntu
 - **GPU**: 本地使用ollama部署，推荐使用Nvidia显卡或单CPU模式。
 - **内存**：8GB+
 
