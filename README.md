@@ -11,6 +11,9 @@
 🌈 **Live Demo**  
 [在线体验即将上线，敬请期待！]()
 
+## 架构方案
+![image](./images/app-01.png)
+
 ## 🎉 **特性**
 - **核心技术栈**：Dify + Ollama + Sanic + Text2SQL
 - **UI 框架**：Vue 3 + TypeScript + Vite 5
