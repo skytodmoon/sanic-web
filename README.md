@@ -58,6 +58,7 @@
    - 具体步骤如下：
 
 1. **启动服务**
+   - Dify访问地址：http://localhost 账号:admin 密码:admin123 
    ```bash
    # 拉起dify服务
    cd docker/dify/docker
