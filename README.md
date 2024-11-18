@@ -123,7 +123,7 @@
 
 ## 🌹 支持
 
-如果你喜欢这个项目或发现有用，可以点右上角 [`Star`](https://github.com/pdsuwwz/chatgpt-vue3-light-mvp) 支持一下，你的支持是我们不断改进的动力，感谢！ ^_^ 
+如果你喜欢这个项目或发现有用，可以点右上角 [`Star`](https://github.com/apconw/sanic-web) 支持一下，你的支持是我们不断改进的动力，感谢！ ^_^ 
 
 ## QA交流群
 ![image](./images/ding.png)
