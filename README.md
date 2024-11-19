@@ -79,7 +79,8 @@
    
    或执行
    
-   python3 common/initialize_mysql.py
+   cd docker
+   python3 ../common/initialize_mysql.py
    
 4. **访问服务**
  - 前端服务：http://localhost:8081
@@ -99,9 +100,14 @@
    poetry install
    
 2. **初始化数据库**
-   ```bash
-   # 安装mysql&初始化数据库
-   python3 common/initialize_mysql.py
+      ```bash
+   cd docker
+   ./init.sh
+   
+   或执行
+   
+   cd docker
+   python3 ../common/initialize_mysql.py
 
 3. **前端依赖安装**  
    - 前端基于chatgpt-vue3-light-mvp开源项目[参考chatgpt-vue3-light-mvp安装](https://github.com/pdsuwwz/chatgpt-vue3-light-mvp)
