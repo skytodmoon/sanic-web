@@ -50,7 +50,7 @@
 - 模型: Qwen2.5
 
 ## ⚙️ **Dify环境配置**
-1. **本机部署**
+1. **本地容器部署**
    - 为了兼顾第一次接触大模型应用的同学，我们提供了一键拉起Dify服务零配置，同时启动服务方式，方便大家快速体验。
    - Dify本机访问地址：http://localhost 账号:admin 密码:admin123 
    ```bash
@@ -58,10 +58,10 @@
    cd docker/dify/docker
    docker-compose up -d
    
-2. **已安装Dify环境**
-   - 第一步直接导入画布***docker/dify/数据问答.yml***修改DiFyAppEnum/DATABASE_QA密钥key
-   - 第二步修改项目.env文件，根据环境修改Dify服务接口地址即可
-   - 第三步修改Dify画布里HttpRequest配置，修改url地址为具体服务地址
+2. **已安装Dify环境&本地开发调试**
+   - 第一步直接导入项目根目录下的***docker/dify/数据问答.yml画布***至Dify同时修改源码DiFyAppEnum枚举里的DATABASE_QA密钥Key
+   - 第二步修改项目根目录下的.env文件，根据环境修改实际的Dify Rest服务接口地址即可
+   - 第三步修改Dify画布里HttpRequest配置，修改url地址为具体sanic-web服务地址
 
 3. **安装最新版本Dify**
    - 如果需要安装最新版Dify的同学,可以参考官方文档[Dify官方文档](https://docs.dify.ai/zh-hans)。
@@ -94,8 +94,8 @@
 
 
 ## 🛠️ **本地开发**
-- 需要安装项目所有前置依赖、参考上面前置条件
-- 编辑项目根目录下的.env文件，***修改ENV=dev***，并保存。
+- 需要安装项目所有前置依赖、参考上面前置条件、Dify环境配置。
+- 同时需要编辑项目根目录下的.env文件，***修改ENV=dev***，并保存。
 
 1. **后端依赖安装**  
    - poetry安装 [参考poetry官方文档](https://python-poetry.org/docs/)
