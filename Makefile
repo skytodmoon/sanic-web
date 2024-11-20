@@ -12,9 +12,14 @@ SERVER_DOCKER_IMAGE = apconw/$(SERVER_PROJECT_NAME):1.0
 web-build:
 	$(MAKE) -C web docker-build
 
-# 构建服务端镜像(!!根目录.env文件EVN的值修改成test!!)
+# 构建服务端镜像
 service-build:
 		docker build --no-cache -t $(SERVER_DOCKER_IMAGE) -f ./docker/Dockerfile .
+
+
+# 构建 服务端arm64/amd64架构镜像并推送
+docker-build-server-multi:
+	docker buildx build --platform linux/amd64,linux/arm64 --push -t $(SERVER_DOCKER_IMAGE) -f ./docker/Dockerfile .
 
 
 .PHONY: web-build service-build
