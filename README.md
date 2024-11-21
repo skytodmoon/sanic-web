@@ -25,6 +25,7 @@
 
 ## 运行效果
 ![image](./images/chat-04.gif)
+![image](./images/chat-05.jpg)
 ![image](./images/chat-01.png)
 ![image](./images/chat-03.png)
 
