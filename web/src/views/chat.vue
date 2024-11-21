@@ -4,10 +4,13 @@ import { type InputInst } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { UAParser } from 'ua-parser-js'
 import TableModal from './TableModal.vue'
-
+import DefaultPage from './DefaultPage.vue'
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+
+// 显示默认页面
+const showDefaultPage = ref(true)
 
 //全局存储
 const businessStore = useBusinessStore()
@@ -40,6 +43,13 @@ function handleModalClose(value) {
         tableData,
         currentRenderIndex
     )
+}
+
+//新建对话
+function newChat() {
+    showDefaultPage.value = true
+    isInit.value = false
+    conversationItems.value = []
 }
 
 /**
@@ -133,7 +143,7 @@ const visibleConversationItems = computed(() => {
 
 //提交对话
 const handleCreateStylized = async (send_text = '') => {
-    isInit.value = false
+    // isInit.value = false
     // 若正在加载，则点击后恢复初始状态
     if (stylizingLoading.value) {
         onCompletedReader(conversationItems.value.length - 1)
@@ -147,6 +157,13 @@ const handleCreateStylized = async (send_text = '') => {
             refInputTextString.value.focus()
             return
         }
+    }
+
+    // 新建对话 时输入新问题 清空历史数据
+    if (showDefaultPage.value) {
+        conversationItems.value = []
+        showDefaultPage.value = false
+        isInit.value = false
     }
 
     //加入对话历史用于左边表格渲染
@@ -330,6 +347,21 @@ const setMarkdownPreview = (index: number, el: any) => {
 
 // 滚动到指定位置的方法
 const scrollToItem = (index: number) => {
+    //判断默认页面是否显示或对话历史是否初始化
+    if (
+        (!showDefaultPage.value && !isInit.value) ||
+        conversationItems.value.length === 0
+    ) {
+        fetchConversationHistory(
+            isInit,
+            conversationItems,
+            tableData,
+            currentRenderIndex
+        )
+        console.log(isInit.value)
+    }
+    //关闭默认页面
+    showDefaultPage.value = false
     if (markdownPreviews.value[index]) {
         markdownPreviews.value[index].scrollIntoView({ behavior: 'smooth' })
     }
@@ -342,6 +374,7 @@ const scrollToItem = (index: number) => {
                 type="primary"
                 icon-placement="left"
                 color="#5e58e7"
+                @click="newChat"
                 strong
                 style="
                     width: 160px;
@@ -429,7 +462,12 @@ const scrollToItem = (index: number) => {
                 class="scrollable-container"
                 ref="messagesContainer"
             >
+                <div v-if="showDefaultPage">
+                    <DefaultPage />
+                </div>
+
                 <div
+                    v-if="!showDefaultPage"
                     v-for="(item, index) in visibleConversationItems"
                     :key="index"
                     class="mb-4"
@@ -578,5 +616,12 @@ const scrollToItem = (index: number) => {
 
 :deep(.custom-table .n-data-table-thead) {
     display: none;
+}
+.default-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh; /* 使容器高度占满整个视口 */
+    background-color: #f0f2f5; /* 可选：设置背景颜色 */
 }
 </style>
