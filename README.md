@@ -105,6 +105,8 @@
    pip install poetry
    
    # 安装依赖根目录执行
+   # 设置国内仓库
+   poetry source add --priority=default mirrors https://pypi.tuna.tsinghua.edu.cn/simple/
    poetry install
    
 2. **初始化数据库**
