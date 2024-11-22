@@ -117,7 +117,7 @@ body {
 }
 
 .header {
-    background-color: #f8f9fa;
+    background-color: #f6f7fb;
     border-radius: 5px;
     text-align: center;
     display: flex;
