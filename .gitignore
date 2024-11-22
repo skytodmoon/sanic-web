@@ -12,5 +12,3 @@ web/.vscode/
 
 .DS_Store
 .idea/
-
-docker/dify/docker/volumes/
