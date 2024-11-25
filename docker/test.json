@@ -1,0 +1,3 @@
+{
+  "text": "{\"thoughts\":\"用户希望查询诈骗金额最高的前十条数据。根据表结构定义，我们可以直接从 `view_alarm_detail` 表中选择并排序涉案资金字段，然后限制结果为前10条。这里使用 `response_table` 作为数据展示方式，因为它适合显示多个字段的数据。\",\"sql\":\"SELECT * FROM view_alarm_detail ORDER BY 涉案资金 DESC LIMIT 10;\",\"type\":\"response_table\",\"status\":\"0\"}"
+}

@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
                     rewrite: (path) => path.replace(/^\/siliconflow/, '')
                 },
                 '/sanic': {
-                    target: 'http://localhost:8088',
+                    target: 'http://192.168.32.243:8088',
                     changeOrigin: true,
                     ws: true,
                     rewrite: (path) => path.replace(/^\/sanic/, '')

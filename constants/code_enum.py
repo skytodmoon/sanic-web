@@ -20,7 +20,7 @@ class DiFyAppEnum(Enum):
     DiFy app-key 枚举
     """
 
-    DATABASE_QA = ("DATABASE_QA", "app-HFjPprweT1OJDckUh71JQd3T", "数据问答")
+    DATABASE_QA = ("DATABASE_QA", "app-VUR91VuzAc5pLhgUM1rXxxsR", "数据问答")
 
     FILEDATA_QA = ("FILEDATA_QA", "app-lL9IirirLhuzbmqipKH6qGZO", "表格问答")
 

@@ -7,7 +7,7 @@ authors = ["lihuan <343397495@qq.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.9"
 sanic = "^24.6.0"
 sqlalchemy = "^2.0.31"
 aiomysql = "^0.2.0"
@@ -25,11 +25,15 @@ python-docx = "^1.1.2"
 ollama = "^0.3.1"
 langchain-community = "^0.2.12"
 python-dotenv = "^1.0.1"
-pandasai = "^2.2.15"
 minio = "^7.2.8"
 pyjwt = "^2.9.0"
 selenium = "^4.26.0"
 bs4 = "^0.0.2"
+pandasai = "^2.4.0"
+[[tool.poetry.source]]
+name = "mirrors"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+priority = "primary"
 
 [build-system]
 requires = ["poetry-core"]
