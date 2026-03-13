@@ -1,6 +1,7 @@
 <script lang="tsx" setup>
 import * as GlobalAPI from '@/api'
 import IconifyIcon from '@/components/IconifyIcon/index.vue'
+import { usePageAgent } from '@/hooks/usePageAgent'
 
 /* ---------- 登录业务 ---------- */
 const form = ref({ username: 'admin', password: '123456' })
@@ -10,11 +11,21 @@ const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
 
+/* ---------- Page Agent ---------- */
+const { initFromDefaultModel, destroyAgent } = usePageAgent()
+
 /* ---------- 生命周期 ---------- */
-onMounted(() => {
+onMounted(async () => {
   if (userStore.isLoggedIn) {
     router.push('/')
+    return
   }
+
+  await initFromDefaultModel()
+})
+
+onBeforeUnmount(() => {
+  destroyAgent()
 })
 
 /* ---------- 登录操作 ---------- */

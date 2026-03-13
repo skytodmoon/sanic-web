@@ -25,7 +25,6 @@ bp = Blueprint("aiModelService", url_prefix="/system/aimodel")
 @openapi.parameter("keyword", str, description="搜索关键词")
 @openapi.parameter("model_type", int, description="模型类型")
 @openapi.response(200, {"application/json": {"schema": get_schema(AiModelListResponse)}})
-@check_token
 @async_json_resp
 async def list_models(request: Request):
     keyword = request.args.get("keyword")
