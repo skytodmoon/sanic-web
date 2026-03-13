@@ -13,11 +13,14 @@ import FileUploadManager from '@/views/file/file-upload-manager.vue'
 
 import SuggestedView from './suggested-page.vue'
 import TableModal from '@/views/datasource/table-modal.vue'
+import { usePageAgent } from '@/hooks/usePageAgent'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const userStore = useUserStore()
+
+const { initFromDefaultModel, destroyAgent } = usePageAgent()
 
 // 显示默认页面
 const showDefaultPage = ref(true)
@@ -1282,6 +1285,7 @@ onMounted(async () => {
     console.error(e)
   }
 
+  initFromDefaultModel()
 })
 
 // 在组件卸载前移除事件监听
@@ -1294,6 +1298,7 @@ onBeforeUnmount(() => {
     clearTimeout(scrollTimer)
     scrollTimer = null
   }
+  destroyAgent()
 })
 
 // ============================== 文件上传 ============================//
@@ -2421,9 +2426,12 @@ const handleHistoryClick = async (item: any) => {
                   </n-dropdown>
 
                   <!-- Send Button (Purple Circle) -->
-                  <div
+                  <button
+                    type="button"
                     class="send-btn-circle"
                     :class="{ disabled: !inputTextString && !pendingUploadFileInfoList?.length }"
+                    :disabled="!inputTextString && !pendingUploadFileInfoList?.length"
+                    aria-label="发送"
                     @click="handleCreateStylized()"
                   >
                     <div
@@ -2434,7 +2442,7 @@ const handleHistoryClick = async (item: any) => {
                       v-else
                       class="i-hugeicons:arrow-up-01 text-white text-20 font-bold"
                     ></div>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2919,6 +2927,9 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 4px 12px rgba($primary-color, 0.35);
+  border: none;
+  padding: 0;
+  outline: none;
 
   .text-20, .text-18 {
     font-size: 18px;

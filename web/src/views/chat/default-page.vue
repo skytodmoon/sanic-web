@@ -90,7 +90,6 @@ onMounted(async () => {
     console.error(e)
   }
 
-  // 加载大语言模型列表（用于顶部下拉选择）
   await loadLLMModels()
 })
 
@@ -643,13 +642,16 @@ const bottomIcons = [
             </n-dropdown>
 
             <!-- Send Button (Purple Circle) -->
-            <div
+            <button
+              type="button"
               class="send-btn-circle"
               :class="{ disabled: !canSubmit }"
+              :disabled="!canSubmit"
+              aria-label="发送"
               @click="handleEnter()"
             >
               <div class="i-hugeicons:arrow-up-01 text-white text-20 font-bold"></div>
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -1006,6 +1008,9 @@ $shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 4px 12px rgba($primary-color, 0.35);
+  border: none;
+  padding: 0;
+  outline: none;
 
   .text-20 {
     font-size: 18px;

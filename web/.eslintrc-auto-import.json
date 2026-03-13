@@ -323,6 +323,8 @@
     "watchWithFilter": true,
     "whenever": true,
     "useAppStore": true,
-    "useAppStoreWithOut": true
+    "useAppStoreWithOut": true,
+    "usePageAgent": true,
+    "pageAgentInstructions": true
   }
 }

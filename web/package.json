@@ -42,6 +42,7 @@
     "markmap-view": "^0.18.8",
     "naive-ui": "^2.38.2",
     "nprogress": "^0.2.0",
+    "page-agent": "^1.5.6",
     "pinia": "^3.0.2",
     "sql-formatter": "^15.6.12",
     "three": "^0.181.2",
