@@ -1,5 +1,5 @@
 import { PageAgent } from 'page-agent'
-import { ref, shallowRef } from 'vue'
+import { nextTick, ref, shallowRef } from 'vue'
 import { fetch_model_list } from '@/api/aimodel'
 import { pageAgentInstructions } from './pageAgentInstructions'
 
@@ -175,6 +175,18 @@ function removeBridge() {
 // 定位清理函数，销毁时调用以移除所有事件监听
 let panelPositionCleanup: (() => void) | null = null
 
+/** 防抖：避免默认页/聊天页切换时 MutationObserver 等多次触发导致面板位置闪烁两次 */
+function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return ((...args: Parameters<T>) => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      fn(...args)
+    }, ms)
+  }) as T
+}
+
 /**
  * 重新计算并设置面板位置
  * 根据当前页面（默认首页 / 聊天页 / 登录页）分别定位
@@ -191,6 +203,7 @@ function repositionPanel(wrapper: HTMLElement) {
     // 登录页：面板在登录卡片下方，间距 20px
     const bottomOffset = viewportH - loginRect.bottom - 20
     wrapper.style.left = `${centerX}px`
+    wrapper.style.transform = 'translateX(-50%)'
     wrapper.style.bottom = `${Math.max(bottomOffset, 8)}px`
     wrapper.style.maxWidth = `${loginRect.width / 2}px` // 宽度为登录卡片的一半
     return
@@ -211,6 +224,7 @@ function repositionPanel(wrapper: HTMLElement) {
     if (!contentEl) return
     const rect = contentEl.getBoundingClientRect()
     wrapper.style.left = `${rect.left + rect.width / 2}px` // 水平居中于内容区
+    wrapper.style.transform = 'translateX(-50%)'
     wrapper.style.bottom = '100px' // 默认距底 100px
     return
   }
@@ -233,6 +247,7 @@ function repositionPanel(wrapper: HTMLElement) {
   }
 
   wrapper.style.left = `${cardCenterX}px` // 水平居中于 input-card
+  wrapper.style.transform = 'translateX(-50%)'
   wrapper.style.bottom = `${Math.max(bottomOffset, 8)}px` // 垂直位置，最小 8px 防止贴底
   wrapper.style.maxWidth = `${cardRect.width / 2}px` // 宽度限制为 input-card 的一半
 }
@@ -249,8 +264,8 @@ function setupPanelPositioning(agent: PageAgent) {
   // 存储所有清理函数，销毁时统一调用
   const cleanups: Array<() => void> = []
 
-  // 封装定位函数
-  const doPosition = () => repositionPanel(wrapper)
+  // 封装定位函数，防抖避免切换页面时多次移动
+  const doPosition = debounce(() => repositionPanel(wrapper), 80)
 
   // 尝试挂载所有监听器
   const tryAttach = () => {
@@ -259,7 +274,7 @@ function setupPanelPositioning(agent: PageAgent) {
       ?? document.querySelector('.n-layout') as HTMLElement
     if (!layoutEl) return false // 布局元素还没渲染，稍后重试
 
-    doPosition() // 立即执行一次定位
+    repositionPanel(wrapper) // 首次立即定位，后续用防抖
 
     // 监听内容区大小变化（如侧栏展开/折叠）
     const ro = new ResizeObserver(doPosition)
@@ -325,6 +340,8 @@ export function usePageAgent() {
     agentReady.value = true
     lastTaskResult = { status: 'idle' }
     exposeBridge()
+    // 面板定位需在 DOM 就绪后执行（input-card、n-layout 等可能尚未渲染）
+    nextTick(() => setupPanelPositioning(agent))
     console.log(`[PageAgent v${BRIDGE_VERSION}] initialized, model: ${PAGE_AGENT_MODEL}`)
     return agent
   }
@@ -369,6 +386,8 @@ export function usePageAgent() {
 
   const destroyAgent = () => {
     if (agentInstance.value) {
+      panelPositionCleanup?.()
+      panelPositionCleanup = null
       try {
         agentInstance.value.panel.dispose()
       }
