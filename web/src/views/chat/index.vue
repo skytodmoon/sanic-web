@@ -20,7 +20,7 @@ const router = useRouter()
 const message = useMessage()
 const userStore = useUserStore()
 
-const { initFromDefaultModel, destroyAgent } = usePageAgent()
+const { initFromDefaultModel, destroyAgent, recreateAgent } = usePageAgent()
 
 // 显示默认页面
 const showDefaultPage = ref(true)
@@ -116,6 +116,7 @@ function newChat() {
     return
   }
   showDefaultPage.value = true
+  recreateAgent()
   isInit.value = true
   conversationItems.value = []
   stylizingLoading.value = false
@@ -676,6 +677,7 @@ const handleCreateStylized = async (
     // 新建对话 时输入新问题 清空历史数据
     conversationItems.value = []
     showDefaultPage.value = false
+    recreateAgent()
 
     // 清除所有步骤信息
     stepProgressStates.value = {}
@@ -1607,7 +1609,9 @@ const handleHistoryClick = async (item: any) => {
   await loadConversationHistory(item, true)
 
   // 关闭默认页面
+  const wasDefaultPage = showDefaultPage.value
   showDefaultPage.value = false
+  if (wasDefaultPage) recreateAgent()
 
   //   等待 DOM 更新完成
   await nextTick()

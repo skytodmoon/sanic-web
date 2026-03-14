@@ -1,5 +1,5 @@
 import { PageAgent } from 'page-agent'
-import { nextTick, ref, shallowRef } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { fetch_model_list } from '@/api/aimodel'
 import { pageAgentInstructions } from './pageAgentInstructions'
 
@@ -169,149 +169,57 @@ function removeBridge() {
 }
 
 // ============================================
-// 面板定位逻辑：让 page-agent 面板居中于 input-card，宽度为其一半
+// 面板定位：一次性设置面板位置（居中于可见的 input-card）
 // ============================================
 
-// 定位清理函数，销毁时调用以移除所有事件监听
-let panelPositionCleanup: (() => void) | null = null
+function positionPanel(wrapper: HTMLElement) {
+  wrapper.style.transition = 'none'
+  wrapper.style.transform = 'translateX(-50%)'
 
-/** 防抖：避免默认页/聊天页切换时 MutationObserver 等多次触发导致面板位置闪烁两次 */
-function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
-  let timer: ReturnType<typeof setTimeout> | null = null
-  return ((...args: Parameters<T>) => {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-      timer = null
-      fn(...args)
-    }, ms)
-  }) as T
-}
-
-/**
- * 重新计算并设置面板位置
- * 根据当前页面（默认首页 / 聊天页 / 登录页）分别定位
- * 默认首页、聊天页：基于可见的 .input-card 居中，宽度为其一半
- * 登录页：基于 .login-card 居中，位置往下调整
- */
-function repositionPanel(wrapper: HTMLElement) {
-  // ---------- 1. 尝试登录页 ----------
+  // 登录页：居中于 form 表单下方
   const loginCard = document.querySelector('.login-container .login-card') as HTMLElement | null
   if (loginCard && loginCard.offsetParent !== null) {
-    const loginRect = loginCard.getBoundingClientRect() // 登录卡片位置
-    const centerX = loginRect.left + loginRect.width / 2 // 水平中心
-    const viewportH = window.innerHeight
-    // 登录页：面板在登录卡片下方，间距 20px
-    const bottomOffset = viewportH - loginRect.bottom - 20
-    wrapper.style.left = `${centerX}px`
-    wrapper.style.transform = 'translateX(-50%)'
-    wrapper.style.bottom = `${Math.max(bottomOffset, 8)}px`
-    wrapper.style.maxWidth = `${loginRect.width / 2}px` // 宽度为登录卡片的一半
+    const formEl = loginCard.querySelector('form') as HTMLElement | null
+    const ref = formEl || loginCard
+    const r = ref.getBoundingClientRect()
+    wrapper.style.left = `${r.left + r.width / 2}px`
+    wrapper.style.top = `${r.bottom + 100}px`
+    wrapper.style.bottom = '100px'
+    wrapper.style.maxWidth = `${r.width*10}px`
     return
   }
 
-  // ---------- 2. 尝试默认首页 / 聊天页的 .input-card ----------
+  // 默认首页 / 聊天页的 .input-card
   const cards = document.querySelectorAll<HTMLElement>('.input-card')
   let foundCard: HTMLElement | null = null
-  // 遍历找到当前可见的那个（offsetParent 不为 null 表示可见）
-  cards.forEach((c) => {
-    if (c.offsetParent !== null) foundCard = c
-  })
+  cards.forEach((c) => { if (c.offsetParent !== null) foundCard = c })
 
-  // 找不到可见的 input-card 时，降级为内容区居中
   if (!foundCard) {
     const contentEl = document.querySelector('.n-layout-scroll-container') as HTMLElement
       ?? document.querySelector('.n-layout-content') as HTMLElement
     if (!contentEl) return
-    const rect = contentEl.getBoundingClientRect()
-    wrapper.style.left = `${rect.left + rect.width / 2}px` // 水平居中于内容区
-    wrapper.style.transform = 'translateX(-50%)'
-    wrapper.style.bottom = '100px' // 默认距底 100px
+    const r = contentEl.getBoundingClientRect()
+    wrapper.style.left = `${r.left + r.width / 2}px`
+    wrapper.style.bottom = '100px'
     return
   }
 
   const card: HTMLElement = foundCard
-  const cardRect = card.getBoundingClientRect() // 获取 input-card 的位置和尺寸
-  const cardCenterX = cardRect.left + cardRect.width / 2 // input-card 的水平中心点
-  const viewportH = window.innerHeight // 视口高度
-
-  // 判断当前是默认首页还是聊天页（通过祖先元素判断）
+  const r = card.getBoundingClientRect()
   const isDefaultPage = !!card.closest('.default-page-container')
-  let bottomOffset: number
-  if (isDefaultPage) {
-    // 默认首页：面板在 input-card 下方，距底部较远（输入框在页面中间偏上）
-    bottomOffset = viewportH - cardRect.bottom - 240
-  }
-  else {
-    // 聊天页：输入框贴底，面板在 input-card 上方
-    bottomOffset = viewportH - cardRect.top - 100
-  }
+  const bottomOffset = isDefaultPage
+    ? window.innerHeight - r.bottom - 240
+    : window.innerHeight - r.top - 100
 
-  wrapper.style.left = `${cardCenterX}px` // 水平居中于 input-card
-  wrapper.style.transform = 'translateX(-50%)'
-  wrapper.style.bottom = `${Math.max(bottomOffset, 8)}px` // 垂直位置，最小 8px 防止贴底
-  wrapper.style.maxWidth = `${cardRect.width / 2}px` // 宽度限制为 input-card 的一半
+  wrapper.style.left = `${r.left + r.width / 2}px`
+  wrapper.style.bottom = `${Math.max(bottomOffset, 8)}px`
+  wrapper.style.maxWidth = `${r.width / 2}px`
 }
 
-/**
- * 初始化面板定位：监听布局变化，实时更新面板位置
- * 监听 ResizeObserver（容器大小变化）、window resize、scroll、MutationObserver（DOM 增删如 v-if 切换）
- */
-function setupPanelPositioning(agent: PageAgent) {
-  // 获取面板的 wrapper DOM 元素
-  const wrapper = (agent.panel as any).wrapper as HTMLElement | undefined
-  if (!wrapper) return
-
-  // 存储所有清理函数，销毁时统一调用
-  const cleanups: Array<() => void> = []
-
-  // 封装定位函数，防抖避免切换页面时多次移动
-  const doPosition = debounce(() => repositionPanel(wrapper), 80)
-
-  // 尝试挂载所有监听器
-  const tryAttach = () => {
-    // 找到内容区布局元素
-    const layoutEl = document.querySelector('.n-layout-content') as HTMLElement
-      ?? document.querySelector('.n-layout') as HTMLElement
-    if (!layoutEl) return false // 布局元素还没渲染，稍后重试
-
-    repositionPanel(wrapper) // 首次立即定位，后续用防抖
-
-    // 监听内容区大小变化（如侧栏展开/折叠）
-    const ro = new ResizeObserver(doPosition)
-    ro.observe(layoutEl)
-    cleanups.push(() => ro.disconnect())
-
-    // 监听窗口大小变化
-    window.addEventListener('resize', doPosition)
-    cleanups.push(() => window.removeEventListener('resize', doPosition))
-
-    // 监听滚动容器的滚动事件（input-card 位置可能随滚动变化）
-    const scrollEls = document.querySelectorAll('.n-layout-scroll-container')
-    scrollEls.forEach((el) => {
-      el.addEventListener('scroll', doPosition, { passive: true })
-      cleanups.push(() => el.removeEventListener('scroll', doPosition))
-    })
-
-    // 监听 DOM 子树变化（v-if 切换默认页/聊天页时 input-card 会增删）
-    const mo = new MutationObserver(doPosition)
-    mo.observe(layoutEl, { childList: true, subtree: true })
-    cleanups.push(() => mo.disconnect())
-
-    return true
-  }
-
-  // 如果首次挂载失败（布局元素还没渲染），用 MutationObserver 等待
-  if (!tryAttach()) {
-    const mo = new MutationObserver(() => {
-      if (tryAttach()) mo.disconnect() // 挂载成功后停止观察
-    })
-    mo.observe(document.body, { childList: true, subtree: true })
-    cleanups.push(() => mo.disconnect())
-  }
-
-  // 保存清理函数，在 destroyAgent 时调用
-  panelPositionCleanup = () => cleanups.forEach(fn => fn())
-}
+// ============================================
+// 保存最近一次初始化配置，用于 recreateAgent
+// ============================================
+let savedConfig: { baseURL: string, apiKey: string } | null = null
 
 // ============================================
 // 对外暴露的 composable
@@ -321,6 +229,7 @@ export function usePageAgent() {
     if (agentInstance.value) {
       destroyAgent()
     }
+    savedConfig = config
 
     const agent = new PageAgent({
       model: PAGE_AGENT_MODEL,
@@ -335,15 +244,31 @@ export function usePageAgent() {
     })
 
     agent.panel.show()
+    const wrapper = (agent.panel as any).wrapper as HTMLElement | undefined
+    if (wrapper) {
+      // 等 DOM 就绪后一次性定位
+      requestAnimationFrame(() => positionPanel(wrapper))
+    }
 
     agentInstance.value = agent
     agentReady.value = true
     lastTaskResult = { status: 'idle' }
     exposeBridge()
-    // 面板定位需在 DOM 就绪后执行（input-card、n-layout 等可能尚未渲染）
-    nextTick(() => setupPanelPositioning(agent))
     console.log(`[PageAgent v${BRIDGE_VERSION}] initialized, model: ${PAGE_AGENT_MODEL}`)
     return agent
+  }
+
+  /**
+   * 销毁当前面板，然后用同样的配置重新创建。
+   * 面板会直接出现在新页面的正确位置，无任何移动动画。
+   * 传入 delay 可等待 DOM（如 Vue transition）稳定后再创建。
+   */
+  const recreateAgent = (delay = 350) => {
+    if (!savedConfig) return
+    destroyAgent()
+    setTimeout(() => {
+      if (savedConfig) initAgent(savedConfig)
+    }, delay)
   }
 
   const initFromDefaultModel = async () => {
@@ -386,8 +311,6 @@ export function usePageAgent() {
 
   const destroyAgent = () => {
     if (agentInstance.value) {
-      panelPositionCleanup?.()
-      panelPositionCleanup = null
       try {
         agentInstance.value.panel.dispose()
       }
@@ -418,6 +341,7 @@ export function usePageAgent() {
     initFromDefaultModel,
     initFromEnv,
     destroyAgent,
+    recreateAgent,
     executeAgent,
   }
 }
