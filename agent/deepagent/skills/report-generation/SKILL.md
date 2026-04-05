@@ -1,6 +1,6 @@
 ---
 name: report-generation
-description: 生成数据分析报告：查询数据 → 深度分析归因 → 输出 HTML 可视化报告
+description: 生成数据分析报告：探索表结构 → 多维度查询 → 智能深度分析归因 → 动态风格 HTML 可视化报告（ECharts）
 ---
 
 # 报告生成技能
@@ -9,16 +9,16 @@ description: 生成数据分析报告：查询数据 → 深度分析归因 → 
 
 当用户要求生成**报告、分析报告、可视化报告、趋势分析、统计报告**等任何报告时。
 
-## ⚠️ 约束（不可违反）
+## 约束（不可违反）
 
-- **禁止写入本地文件**
 - **禁止调用上传工具**（`upload_html_report_to_minio` 等）
 - **HTML 必须用分隔符包裹后直接输出到对话中**
 - **此技能是指令文档，直接按流程执行，不要说"调用技能"然后停下**
+- **查询完数据后必须立即生成报告，不要中途停顿**
 
 ---
 
-## 工作流程（5 步，必须全部完成）
+## 工作流程（7 步，必须全部完成）
 
 ### 第 1 步：理解需求
 
@@ -28,165 +28,401 @@ description: 生成数据分析报告：查询数据 → 深度分析归因 → 
 - **分析维度**：时间、地区、类别、产品等
 - **时间范围**：最近一周/月/年等
 
-### 第 2 步：探索数据库 & 查询数据
+### 第 2 步：探索数据库 & 智能表过滤
 
-1. `sql_db_list_tables` → 找到相关表
-2. `sql_db_schema` → 查看列名和类型
-3. `sql_db_table_relationship` → 查看表关系
-4. `sql_db_query` → 执行查询获取数据
+1. `sql_db_list_tables` → 获取所有表列表
+2. **智能过滤**：根据用户问题语义分析，筛选出相关表（通常 3-8 张）
+   - 将关键词与表名进行语义匹配
+   - 考虑关联表（如查销售需要同时选中 orders 和 products）
+   - 忽略无关的系统表、日志表
+3. `sql_db_schema` → 获取筛选后表的列名和类型（一次传入多表）
+4. `sql_db_table_relationship` → 获取表关系
+
+### 第 3 步：多维度 SQL 查询
+
+**根据报告需求，生成多条 SQL 获取不同维度的数据：**
+
+| 报告需要 | 查询策略 |
+|---------|---------|
+| KPI 汇总 | 聚合查询（SUM/COUNT/AVG） |
+| 时间趋势 | DATE_TRUNC/DATE_FORMAT + GROUP BY 时间 + ORDER BY ASC |
+| 分类对比 | GROUP BY 类别 + ORDER BY DESC |
+| Top N 排名 | ORDER BY DESC LIMIT N |
+| 占比分析 | GROUP BY + 百分比计算 |
+| 增长率 | 窗口函数 LAG() 或自连接 |
+| 归因分解 | 多维度 GROUP BY + 增量贡献 |
 
 **查询原则：**
 - 只查必要列，不用 `SELECT *`
 - 使用表别名、适当的 JOIN 条件
 - 合理使用聚合函数、GROUP BY、ORDER BY
 - 默认 LIMIT 100
+- 每条 SQL 标注用途
 
-### 第 3 步：深度分析（⚠️ 必须执行，不可跳过）
+### 第 4 步：执行查询
 
-**查询到数据后，必须先分析再生成报告。** 以下 4 个分析维度至少完成 3 个：
+使用 `sql_db_query` 逐条执行 SQL，收集所有结果数据。
 
-#### A. 描述性分析 — What happened
+**执行失败时：**
+1. 分析错误信息
+2. 修正 SQL（常见修复：引号错误、缺少 schema 前缀、日期函数语法错误）
+3. 重试一次。仍失败则在报告中注明
 
-- 计算核心指标：总量、均值、中位数、最大/最小值
-- 计算增长率：同比（YoY）、环比（MoM）
-- 计算占比：各分类在整体中的比例
-- 检测异常值：偏离均值超过 2 倍标准差的数据
+### 第 5 步：智能分析引擎（核心 — 动态维度，不可跳过）
 
-#### B. 趋势分析 — How is it changing
+**查询到数据后，必须先深度分析再生成报告。**
 
+#### 动态维度选择策略
+
+根据数据特征自动判断适用的分析维度：
+
+| 数据特征 | 触发的分析维度 | 说明 |
+|---------|-------------|------|
+| 包含时间字段 + 数值指标 | **趋势分析** | 计算同比/环比、识别拐点、判断趋势方向和加速度 |
+| 包含分类字段 + 数值指标 | **结构分析** | 各分类占比、帕累托分析（80/20）、集中度分析 |
+| 包含多个分类维度 | **归因分析** | 维度下钻、贡献度量化、交叉分析 |
+| 存在可对比的分组 | **对比分析** | Top N / Bottom N 排名、组间差异 |
+| 数值分布范围大 | **异常检测** | 均值±2σ、离群值识别 |
+| 包含率/比值指标 | **效率分析** | 转化率、完成率的横向和纵向对比 |
+| 多指标同时存在 | **相关性分析** | 指标间关联关系、协同/对冲效应 |
+| 用户问"为什么" | **因果探索** | 可能的驱动因素假设、影响链路推测 |
+
+**至少完成 3 个分析维度。**
+
+#### 各维度分析要点
+
+**A. 趋势分析 — How is it changing**
 - 趋势方向：上升/下降/平稳/波动
 - 变化速率：加速还是减速
 - 拐点识别：趋势逆转的关键时间点
+- 环比变化率
 - 周期性模式：季节性、节假日效应
 
-#### C. 归因分析 — Why did it happen（⚠️ 核心，必须完成）
+**B. 结构分析 — What's the composition**
+- 各分类占比分布
+- 帕累托分析：头部集中度（80/20 效应）
+- HHI 集中度指数
 
+**C. 归因分析 — Why did it happen（核心，当数据支持时必须执行）**
 - **维度下钻**：哪个地区/产品/渠道对变化贡献最大？
 - **贡献度量化**：各维度对总体变化的贡献百分比
 - **对比归因**：表现优于/低于平均水平的类别及原因
 - **结构变化**：各维度占比随时间的迁移
 
-#### D. 对比分析 — How does it compare
-
+**D. 对比分析 — How does it compare**
 - 时间对比：同比、环比
 - 分组对比：不同地区/产品/渠道间的差异
 - 排名分析：Top N 和 Bottom N
-- 帕累托分析：头部集中度（80/20 效应）
+- 帕累托分析：头部集中度
 
-### 第 4 步：生成 HTML 报告
+**E. 异常检测 — What's unusual**
+- 偏离均值超过 2 倍标准差的数据
+- 断崖式变化
 
-**⚠️ 第 3 步的所有分析结果必须写入 HTML 报告中，不能只在思考过程中分析而不输出到报告里。**
+#### 分析输出要求
+
+每个被选中的分析维度必须输出：
+1. **维度标题**：明确的分析维度名称
+2. **核心发现**：2-4 个带具体数字的发现
+3. **数据支撑**：引用具体数据作为证据
+
+#### 结论与建议生成（必须包含）
+
+**核心发现**（3-5 条，必须带具体数字）：
+- 用"发现"而非"猜测"的语气
+- 每条发现必须有数据支撑
+- 按影响程度从大到小排列
+
+**风险提示**（如果存在）：
+- 异常波动、断崖式下降、集中度过高等
+- 必须给出具体数字和影响范围
+
+**可执行建议**（分短期/中期/长期）：
+- **短期（1-2 周）**：可立即采取的行动
+- **中期（1-3 月）**：需要资源投入的优化
+- **长期（3-12 月）**：战略性调整建议
+- 每条建议必须具体可操作，避免空泛建议如"加强管理"
+
+### 第 6 步：生成 HTML 报告
+
+**第 5 步的所有分析结果必须写入 HTML 报告中。**
+
+#### 动态风格选择
+
+根据报告内容自动匹配最佳视觉风格：
+
+| 数据场景 | 推荐风格 | 设计特征 |
+|---------|---------|---------|
+| 经营分析/KPI 仪表盘 | **玻璃拟态暗色** | 深色背景、毛玻璃卡片、霓虹色指标、渐变边框 |
+| 趋势分析/时序数据 | **科技渐变** | 深蓝到紫色渐变背景、发光折线、动态数据标签 |
+| 分类对比/排名 | **现代明亮** | 浅色背景、鲜明对比色柱状图、卡片阴影层次 |
+| 占比分析/结构 | **简约专业** | 白底、精致环形图、高对比度文字 |
+| 多维度综合报告 | **仪表盘风格** | 网格布局、KPI 卡片行、多图表区块 |
+| 异常/风险报告 | **警示风格** | 红橙警示色、醒目标注、高亮异常值 |
+
+#### 报告结构（6 个必需区块）
 
 报告 HTML 的 `<body>` 必须按顺序包含以下 **6 个区块**（缺一不可）：
 
 | # | 区块 | HTML 结构 | 内容要求 |
 |---|------|----------|---------|
-| 1 | **报告标题** | `<header>` | 报告名称 + 时间范围 |
-| 2 | **KPI 统计卡片** | `<section class="kpi-cards">` | 3-5 个关键指标卡片，每个包含：指标名、数值、同比/环比变化（↑绿↓红） |
-| 3 | **可视化图表** | `<section class="charts">` | 至少 2 个 Chart.js 图表 |
-| 4 | **详细数据表格** | `<section class="data-table">` | 完整数据列表，关键行高亮 |
-| 5 | **深度分析与归因** | `<section class="deep-analysis">` | ⚠️ **必须包含，见下方详细结构** |
-| 6 | **结论与建议** | `<section class="conclusions">` | 核心发现 + 可操作建议 |
+| 1 | **报告标题** | `<header class="report-header">` | 报告名称 + 时间范围 + 数据库信息 |
+| 2 | **KPI 统计卡片** | `<section class="kpi-cards">` | 3-6 个关键指标卡片，每个包含：指标名、数值、同比/环比变化（↑绿↓红），悬停有微动效 |
+| 3 | **可视化图表** | `<section class="charts">` | 至少 2 个 ECharts 图表，根据数据特征动态选择类型 |
+| 4 | **详细数据表格** | `<section class="data-table">` | 完整数据列表，斑马纹+悬停高亮，关键行高亮，超 20 行时表格内滚动 |
+| 5 | **深度分析与归因** | `<section class="deep-analysis">` | 必须包含，内容来自第 5 步的动态分析结果 |
+| 6 | **结论与建议** | `<section class="conclusions">` | 核心发现 + 风险提示 + 可操作建议（短/中/长期） |
 
-**图表类型选择：**
-- 时间趋势 → 折线图/面积图
-- 类别对比 → 柱状图
-- 占比分析 → 饼图/环形图
-- 多指标对比 → 组合图（柱状图 + 折线图）
-- 排名展示 → 水平柱状图
+#### 图表类型选择（ECharts）
+
+| 数据特征 | 推荐图表 | ECharts 配置要点 |
+|---------|---------|----------------|
+| 时间序列 | 面积折线图 | `areaStyle` + `smooth: true` + 渐变填充 |
+| 分类排名 | 水平柱状图 | `yAxis` 做类别轴 + 渐变色条 + 数据标签 |
+| 占比结构 | 环形图 | `radius: ['40%', '70%']` + 中心统计文字 |
+| 多维对比 | 分组柱状图 | 多 `series` + `barGap` 调整间距 |
+| 变化归因 | 瀑布图 | 堆叠柱状图模拟，正值绿色负值红色 |
+| 趋势+量 | 双轴图 | `yAxis` 数组 + 柱线组合 |
+| 综合评估 | 雷达图 | 多维度能力画像 |
+| 帕累托 | 组合图 | 柱状 + 累积线 |
 
 ---
 
-**⚠️ 第 5 区块「深度分析与归因」HTML 结构（强制）：**
+#### 第 5 区块「深度分析与归因」HTML 结构（强制）
 
 ```html
 <section class="deep-analysis">
   <h2>深度分析与归因</h2>
 
-  <!-- 5.1 描述性分析 -->
+  <!-- 动态生成的分析区块 —— 每个被选中的分析维度一个 -->
   <div class="analysis-block">
-    <h3>数据概览</h3>
-    <p>总量/均值/中位数等核心指标描述，标注同比环比变化。</p>
-    <!-- 可选：异常值提示卡片 -->
+    <h3>{分析维度标题}</h3>
+    <div class="analysis-content">
+      <p>{核心发现描述，必须带具体数字}</p>
+      <!-- 该维度对应的 ECharts 图表 -->
+      <div class="analysis-chart" id="analysis-chart-{n}" style="height:350px"></div>
+      <!-- 如有归因数据，展示贡献度表格 -->
+      <table class="attribution-table">
+        <thead><tr><th>维度</th><th>贡献值</th><th>贡献占比</th><th>变化方向</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>{维度名}</td>
+            <td>{+/-数值}</td>
+            <td>
+              <div class="progress-bar">
+                <div class="progress-fill positive" style="width: {百分比}%"></div>
+                <span>{百分比}%</span>
+              </div>
+            </td>
+            <td class="trend-up">↑</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <!-- 5.2 趋势分析 -->
-  <div class="analysis-block">
-    <h3>趋势分析</h3>
-    <p>趋势方向、变化速率、拐点描述。</p>
-    <!-- 建议配一个趋势折线图 -->
-  </div>
-
-  <!-- 5.3 归因分析（必须） -->
-  <div class="analysis-block attribution">
-    <h3>归因分析</h3>
-    <!-- 贡献度排名表格 -->
-    <table>
-      <thead><tr><th>维度</th><th>贡献值</th><th>贡献占比</th><th>变化方向</th></tr></thead>
-      <tbody>
-        <tr><td>[维度A]</td><td>[+/-数值]</td><td>[XX%]</td><td>[↑/↓]</td></tr>
-        <!-- 更多行... -->
-      </tbody>
-    </table>
-    <p>核心驱动因素：[维度A] 贡献了整体增长的 XX%，主要原因是...</p>
-    <p>主要拖累因素：[维度B] 导致下降 XX%，原因是...</p>
-    <!-- 建议配一个堆叠柱状图或瀑布图展示各维度贡献 -->
-  </div>
-
-  <!-- 5.4 对比分析 -->
-  <div class="analysis-block">
-    <h3>对比分析</h3>
-    <p>Top N / Bottom N 排名描述，帕累托效应描述。</p>
-  </div>
-
-  <!-- 5.5 风险提示 -->
+  <!-- 风险提示（如果存在异常数据） -->
   <div class="risk-alert">
-    <h3>⚠️ 风险提示</h3>
+    <h3>风险提示</h3>
     <ul>
-      <li>[异常信号1：具体数字 + 影响说明]</li>
-      <li>[异常信号2：具体数字 + 影响说明]</li>
+      <li><strong>{异常类型}：</strong>{具体数字 + 影响说明 + 建议关注点}</li>
     </ul>
   </div>
 </section>
 ```
 
-**第 6 区块「结论与建议」HTML 结构：**
+#### 第 6 区块「结论与建议」HTML 结构
 
 ```html
 <section class="conclusions">
   <h2>结论与建议</h2>
+
   <div class="findings">
     <h3>核心发现</h3>
     <ol>
-      <li>[发现1，必须带具体数字]</li>
-      <li>[发现2，必须带具体数字]</li>
-      <li>[发现3，必须带具体数字]</li>
+      <li>
+        <div class="finding-item">
+          <span class="finding-badge">发现 1</span>
+          <p>{发现内容，必须带具体数字和百分比}</p>
+        </div>
+      </li>
+      <!-- 3-5 条核心发现 -->
     </ol>
   </div>
+
   <div class="recommendations">
-    <h3>建议</h3>
-    <ul>
-      <li><strong>短期：</strong>[具体可操作的建议]</li>
-      <li><strong>中期：</strong>[具体可操作的建议]</li>
-      <li><strong>长期：</strong>[具体可操作的建议]</li>
-    </ul>
+    <h3>行动建议</h3>
+    <div class="rec-timeline">
+      <div class="rec-item rec-short">
+        <div class="rec-label">短期 (1-2周)</div>
+        <ul><li>{具体可操作建议，包含预期效果}</li></ul>
+      </div>
+      <div class="rec-item rec-mid">
+        <div class="rec-label">中期 (1-3月)</div>
+        <ul><li>{具体可操作建议，包含预期效果}</li></ul>
+      </div>
+      <div class="rec-item rec-long">
+        <div class="rec-label">长期 (3-12月)</div>
+        <ul><li>{具体可操作建议，包含预期效果}</li></ul>
+      </div>
+    </div>
   </div>
 </section>
 ```
 
 ---
 
-**HTML 技术要求：**
-- Chart.js via CDN：`https://cdn.jsdelivr.net/npm/chart.js`
-- Google Fonts：Inter（正文）+ Playfair Display（标题）
-- CSS 变量实现浅色/深色模式（`prefers-color-scheme: dark`）
-- 响应式设计，卡片布局，间距一致
-- 配色专业（蓝色系为主），对比度 ≥ 4.5:1
-- 不使用 emoji 作为图标（⚠️ 和 ↑↓ 在报告正文中允许使用）
-- `.analysis-block` 和 `.risk-alert` 使用卡片样式（圆角、阴影、内边距）
-- `.attribution table` 使用斑马纹样式，贡献占比列用进度条或色条可视化
+#### HTML 技术规范
 
-### 第 5 步：输出报告
+**必须使用的技术栈：**
+- **图表库**：Apache ECharts CDN (`https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js`)
+- **字体**：系统字体栈 + 可选 Google Fonts（Inter、Noto Sans SC）
+- **CSS**：变量系统 + `backdrop-filter` 玻璃效果 + CSS Grid/Flexbox 响应式布局
+- **单文件**：所有 CSS/JS 内联，除 ECharts CDN 外无外部依赖
+
+**ECharts 主题配色方案：**
+
+```javascript
+// 动态主题色板 - 根据场景选择
+const PALETTES = {
+  business: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4'],
+  tech: ['#00d4ff', '#7c4dff', '#00e676', '#ff6d00', '#2979ff', '#651fff', '#00b0ff', '#d500f9'],
+  warm: ['#ff6b6b', '#ffa06b', '#ffd93d', '#6bcb77', '#4d96ff', '#9b59b6', '#1abc9c', '#e74c3c'],
+  cool: ['#667eea', '#764ba2', '#36d1dc', '#5b86e5', '#06beb6', '#48b1bf', '#4568dc', '#b06ab3']
+};
+```
+
+**CSS 核心变量系统（根据风格动态选择值）：**
+
+```css
+:root {
+  /* 主色调 */
+  --primary: #667eea;
+  --primary-light: #818cf8;
+  --primary-dark: #4f46e5;
+  --accent: #7c4dff;
+
+  /* 背景系统 */
+  --bg-main: #0f172a;
+  --bg-card: rgba(30, 41, 59, 0.7);
+  --bg-card-hover: rgba(30, 41, 59, 0.9);
+
+  /* 文字层次 */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* 状态色 */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
+
+  /* 玻璃效果 */
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: 12px;
+
+  /* 布局 */
+  --radius: 16px;
+  --radius-sm: 8px;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+```
+
+**关键 CSS 组件样式：**
+
+```css
+/* 玻璃拟态卡片 */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* KPI 卡片悬停效果 */
+.kpi-card {
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.15);
+}
+
+/* 归因贡献度进度条 */
+.progress-bar {
+  position: relative;
+  background: rgba(255,255,255,0.1);
+  border-radius: 12px;
+  height: 24px;
+  overflow: hidden;
+}
+.progress-fill.positive {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+.progress-fill.negative {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+/* 归因分析区块高亮边框 */
+.analysis-block.attribution {
+  border-left: 4px solid var(--accent);
+}
+
+/* 建议时间线 */
+.rec-timeline {
+  position: relative;
+  padding-left: 24px;
+  border-left: 2px solid var(--glass-border);
+}
+.rec-item::before {
+  content: '';
+  position: absolute;
+  left: -29px; top: 22px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+.rec-short::before { border-color: var(--success); background: rgba(16,185,129,0.2); }
+.rec-mid::before { border-color: var(--info); background: rgba(59,130,246,0.2); }
+.rec-long::before { border-color: var(--accent); background: rgba(124,77,255,0.2); }
+
+/* 核心发现徽章 */
+.finding-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--primary);
+  color: white;
+}
+
+/* 表格 */
+.data-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.data-table tr:nth-child(even) {
+  background: var(--table-stripe);
+}
+.data-table tr:hover {
+  background: var(--bg-card-hover);
+}
+```
+
+### 第 7 步：输出报告
 
 用分隔符包裹 HTML 直接输出：
 
@@ -196,8 +432,19 @@ description: 生成数据分析报告：查询数据 → 深度分析归因 → 
 <!-- REPORT_HTML_START -->
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>...</head>
-<body>...</body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{报告标题}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>...完整CSS...</style>
+</head>
+<body>
+    <div class="report-container">
+        <!-- 6 个必需区块 -->
+    </div>
+    <script>...ECharts 初始化代码...</script>
+</body>
 </html>
 <!-- REPORT_HTML_END -->
 
@@ -205,15 +452,17 @@ description: 生成数据分析报告：查询数据 → 深度分析归因 → 
 - [图表1说明]
 - [图表2说明]
 - 详细数据表格
-- 分析结论与洞察
-
-您可以点击「预览报告」查看，或点击「下载报告」保存到本地。
+- 深度分析与归因
+- 结论与建议
 ```
 
 **关键：**
-- 分隔符必须独占一行
+- 分隔符 `<!-- REPORT_HTML_START -->` 和 `<!-- REPORT_HTML_END -->` 必须独占一行
 - HTML 必须完整（DOCTYPE + html + head + body）
+- ECharts 图表初始化代码放在 `</body>` 之前的 `<script>` 中
 - 查询数据后必须立即生成报告，不要中途停顿
+- 不使用 emoji 作为图标（报告正文中允许 ↑↓）
+- 对比度 ≥ 4.5:1
 
 ---
 
@@ -221,11 +470,46 @@ description: 生成数据分析报告：查询数据 → 深度分析归因 → 
 
 | 模式 | 查询策略 | 推荐图表 |
 |------|---------|---------|
-| 时间趋势 | DATE_TRUNC + GROUP BY 月份 | 折线图 |
+| 时间趋势 | DATE_TRUNC + GROUP BY 月份 | 面积折线图 |
 | 类别对比 | GROUP BY 类别 + ORDER BY | 柱状图 |
 | Top N 排名 | ORDER BY DESC LIMIT N | 水平柱状图 |
-| 占比分析 | GROUP BY + 百分比计算 | 饼图/环形图 |
+| 占比分析 | GROUP BY + 百分比计算 | 环形图 |
 | 增长率分析 | 窗口函数 LAG() | 折线图 + 数据标签 |
 | 归因分解 | 多维度 GROUP BY + 增量贡献 | 瀑布图/堆叠柱状图 |
 | 异常检测 | 均值 ± 2σ 标记异常 | 折线图 + 红色标注 |
 | 帕累托分析 | 累积占比计算 | 组合图（柱状 + 累积线） |
+
+---
+
+## 完整示例
+
+### 示例：用户要求"分析2024年月度销售趋势，为什么8月特别高？"
+
+**执行流程：**
+1. 理解需求 → 趋势+归因报告
+2. `sql_db_list_tables` → 智能过滤出 orders, products, customers
+3. `sql_db_schema("orders, products, customers")` → 获取 schema
+4. `sql_db_table_relationship("orders, products, customers")` → 获取关系
+5. 生成多条 SQL：
+   - SQL1：月度趋势（`GROUP BY month ORDER BY month`）
+   - SQL2：8月品类分解（`GROUP BY category ORDER BY sales DESC`）
+   - SQL3：7月 vs 8月对比（CASE WHEN 计算增量）
+6. `sql_db_query` 逐条执行
+7. **动态分析**：
+   - 趋势分析：识别8月为全年峰值，环比+142%
+   - 归因分析：电子产品品类贡献 58%，七夕促销贡献 32%
+   - 结构分析：Q3 品类结构从均衡型转向电子产品主导
+8. 自动选择"科技渐变"风格 → 生成 HTML 报告
+9. 输出分隔符包裹的完整 HTML
+
+### 反面示例（禁止行为）
+
+```
+# 错误：工作流中途停顿
+用户: 生成一个销售报告
+Claude: "我找到了相关表，要继续吗？"  ← 禁止
+Claude: "数据查询完毕，要生成报告吗？"  ← 禁止
+Claude: "用什么风格的报告？"  ← 禁止
+
+# 正确：一次性完成全部流程，自动决策所有选项。
+```

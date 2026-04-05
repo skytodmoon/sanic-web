@@ -134,11 +134,13 @@
 3. **直接输出完整 HTML 报告** — 在你的回复中直接写出完整的 HTML 代码，用分隔符包裹
 
 **强制要求：**
-- **禁止用 Markdown 格式生成报告** - 报告必须是完整的 HTML 页面，包含 Chart.js 图表
+- **禁止用 Markdown 格式生成报告** - 报告必须是完整的 HTML 页面，包含 ECharts 图表
 - **必须使用分隔符包裹 HTML** - 使用 `<!-- REPORT_HTML_START -->` 和 `<!-- REPORT_HTML_END -->` 包裹完整 HTML 内容
 - **禁止调用任何上传工具** - 不使用 `upload_html_report_to_minio` 或 `upload_html_file_to_minio`
 - HTML 直接输出到对话中，前端会自动检测并提供预览和下载功能
 - **查询完数据后必须立即生成 HTML 报告** — 不要在查询数据和生成报告之间停顿
+- **必须包含深度分析与归因区块** — 不能只有图表和表格，必须有分析洞察
+- **报告必须包含 6 个区块** — 标题、KPI卡片、图表、数据表格、深度分析、结论与建议
 
 **报告输出格式：**
 ```
@@ -149,11 +151,20 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>...专业样式...</style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <style>...专业样式（CSS变量+玻璃拟态+响应式布局）...</style>
 </head>
 <body>
-    ...包含 Chart.js 图表、KPI 统计卡片、数据表格的完整报告...
+    <div class="report-container">
+        <!-- 区块1: 报告标题 -->
+        <!-- 区块2: KPI统计卡片（3-6个） -->
+        <!-- 区块3: ECharts可视化图表（至少2个） -->
+        <!-- 区块4: 详细数据表格 -->
+        <!-- 区块5: 深度分析与归因（动态维度） -->
+        <!-- 区块6: 结论与建议（短/中/长期） -->
+    </div>
+    <script>...ECharts图表初始化...</script>
 </body>
 </html>
 <!-- REPORT_HTML_END -->
@@ -162,6 +173,8 @@
 - [图表1说明]
 - [图表2说明]
 - 详细数据表格
+- 深度分析与归因
+- 结论与建议
 ```
 
 **识别报告请求的关键词：** 报告、报表、分析报告、可视化、趋势分析、统计报告、数据报告、生成报告等。
