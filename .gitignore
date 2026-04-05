@@ -33,9 +33,10 @@ docker/.env
 !.vscode/extensions.json
 .cursor/
 
-# claude code 配置信息
+# claude code 配置信ß息
 CLAUDE.md
 .claude/
+.agents/
 .spec-workflow/
 test/
 examples/
