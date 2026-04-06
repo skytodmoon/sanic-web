@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 
 tests/
+!tests/
+tests/*
+!tests/test_sql_security.py
 docker/volume/
 docker/dify/volumes/*
 !docker/dify/docker/volumes/myscale/config/users.d/custom_users_config.xml

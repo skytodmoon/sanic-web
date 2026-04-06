@@ -147,7 +147,11 @@ const handleBack = () => {
 // 获取图标
 const getIcon = (type: string) => {
   // 使用 Vite 的 glob import 来导入所有图标
-  const iconModules = import.meta.glob('@/assets/datasource/*', { eager: true, as: 'url' })
+  const iconModules = import.meta.glob('@/assets/datasource/*', {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  })
 
   const iconMap: Record<string, string> = {
     mysql: 'icon_mysql.svg',

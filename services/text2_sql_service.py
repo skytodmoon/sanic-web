@@ -11,12 +11,21 @@ from sqlalchemy import text
 from common.date_util import DateEncoder
 from common.exception import MyException
 from common.minio_util import MinioUtils
+from common.sql_security import validate_read_only_sql
 from constants.code_enum import SysCodeEnum as SysCode
 from model.db_connection_pool import get_db_pool
 
 logger = logging.getLogger(__name__)
 
 pool = get_db_pool()
+
+
+def _validate_or_raise(sql: str, dialect: str | None = None) -> None:
+    is_allowed, security_error = validate_read_only_sql(sql, dialect=dialect)
+    if not is_allowed:
+        sql_preview = sql.replace("\n", " ")[:200]
+        logger.warning("SQL 安全校验失败: %s | sql=%s", security_error, sql_preview)
+        raise ValueError(security_error)
 
 
 def query_ex(query: str) -> dict:
@@ -30,6 +39,8 @@ def query_ex(query: str) -> dict:
     logger.info(f"query_sql: {query}")
     if not query:
         return {"column": [], "result": []}
+
+    _validate_or_raise(query)
 
     try:
         with pool.get_session() as session:
@@ -183,6 +194,8 @@ async def exe_file_sql_query(file_key, model_out_str):
         if not sql.strip():
             logger.error("文件问答大模型返回SQL语句为空")
             raise MyException(SysCode.c_9999)
+
+        _validate_or_raise(sql, dialect="duckdb")
 
         # 执行SQL查询
         cursor = con.execute(sql)

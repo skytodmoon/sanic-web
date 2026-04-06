@@ -76,6 +76,35 @@ export SANIC_WORKER_STATE_TTL=120
 # 在资源受限环境下（如 2CPU 8GB），worker 启动可能需要更长时间
 export SANIC_WORKER_STARTUP_TIMEOUT=${SANIC_WORKER_STARTUP_TIMEOUT:-180}
 
+escape_js_string() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g"
+}
+
+generate_runtime_config() {
+    local runtime_config_file="/usr/share/nginx/html/runtime-config.js"
+    local page_agent_flag="${VITE_ENABLE_PAGE_AGENT:-}"
+
+    mkdir -p "$(dirname "$runtime_config_file")"
+
+    if [ -n "$page_agent_flag" ]; then
+        local escaped_flag
+        escaped_flag=$(escape_js_string "$page_agent_flag")
+        cat > "$runtime_config_file" <<EOF
+window.__AIX_RUNTIME_CONFIG__ = Object.assign({}, window.__AIX_RUNTIME_CONFIG__, {
+  VITE_ENABLE_PAGE_AGENT: '${escaped_flag}',
+});
+EOF
+    else
+        cat > "$runtime_config_file" <<'EOF'
+window.__AIX_RUNTIME_CONFIG__ = window.__AIX_RUNTIME_CONFIG__ || {};
+EOF
+    fi
+
+    echo "Generated runtime config at $runtime_config_file"
+}
+
+generate_runtime_config
+
 echo "Starting supervisord..."
 # 启动 supervisord
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

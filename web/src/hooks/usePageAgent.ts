@@ -1,9 +1,11 @@
 import { PageAgent } from 'page-agent'
 import { ref, shallowRef } from 'vue'
 import { fetch_model_list } from '@/api/aimodel'
+import { getPageAgentConfigState } from '@/config'
 import { pageAgentInstructions } from './pageAgentInstructions'
 
 const BRIDGE_VERSION = '2.1.0'
+let pageAgentConfigLogged = false
 
 interface TaskResult {
   status: 'idle' | 'running' | 'done' | 'error'
@@ -30,6 +32,20 @@ const PAGE_AGENT_MODEL = 'qwen3.5-plus'
 const agentInstance = shallowRef<PageAgent | null>(null)
 const agentReady = ref(false)
 let lastTaskResult: TaskResult = { status: 'idle' }
+
+function isPageAgentEnabled() {
+  const config = getPageAgentConfigState()
+
+  if (!pageAgentConfigLogged) {
+    const rawValue = config.rawValue ?? '(default:true)'
+    console.info(
+      `[PageAgent] config resolved from ${config.source}, raw=${rawValue}, enabled=${config.enabled}`,
+    )
+    pageAgentConfigLogged = true
+  }
+
+  return config.enabled
+}
 
 /**
  * 通过 Panel 原生输入框提交任务。
@@ -226,6 +242,12 @@ let savedConfig: { baseURL: string, apiKey: string } | null = null
 // ============================================
 export function usePageAgent() {
   const initAgent = (config: { baseURL: string, apiKey: string }) => {
+    if (!isPageAgentEnabled()) {
+      console.info('[PageAgent] 已禁用，跳过初始化')
+      destroyAgent()
+      return null
+    }
+
     if (agentInstance.value) {
       destroyAgent()
     }
@@ -264,7 +286,7 @@ export function usePageAgent() {
    * 传入 delay 可等待 DOM（如 Vue transition）稳定后再创建。
    */
   const recreateAgent = (delay = 350) => {
-    if (!savedConfig) return
+    if (!isPageAgentEnabled() || !savedConfig) return
     destroyAgent()
     setTimeout(() => {
       if (savedConfig) initAgent(savedConfig)
@@ -272,6 +294,11 @@ export function usePageAgent() {
   }
 
   const initFromDefaultModel = async () => {
+    if (!isPageAgentEnabled()) {
+      console.info('[PageAgent] 已禁用，跳过默认模型初始化')
+      return
+    }
+
     try {
       const res = await fetch_model_list(undefined, 1)
       const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
@@ -298,6 +325,11 @@ export function usePageAgent() {
   }
 
   const initFromEnv = () => {
+    if (!isPageAgentEnabled()) {
+      console.info('[PageAgent] 已禁用，跳过环境变量初始化')
+      return
+    }
+
     const apiKey = import.meta.env.VITE_SILICONFLOW_KEY
     if (!apiKey || apiKey === 'sk-xxxxxx') {
       console.warn('[PageAgent] VITE_SILICONFLOW_KEY 未配置，跳过初始化')
