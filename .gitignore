@@ -37,7 +37,6 @@ docker/.env
 .cursor/
 
 # claude code 配置信ß息
-CLAUDE.md
 .claude/
 .agents/
 .spec-workflow/
