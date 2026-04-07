@@ -64,6 +64,10 @@ examples/
 !services/**/*.py
 !agent/
 !agent/**/*.py
+
+# 智能问答已安装技能（运行时管理，不入版本库）
+agent/common
+!agent/common/skills/.gitkeep
 !common/
 !common/**/*.py
 !model/

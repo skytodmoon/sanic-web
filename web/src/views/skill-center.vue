@@ -1,40 +1,222 @@
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetch_skill_list } from '@/api/skill'
+import { useMessage, useDialog } from 'naive-ui'
+import {
+  fetch_skill_list,
+  install_from_github,
+  install_from_zip,
+  preview_github_skills,
+  toggle_skill,
+  uninstall_skill,
+  type SkillInfo,
+} from '@/api/skill'
 
 defineOptions({ name: 'SkillCenter' })
 
 const router = useRouter()
-const skillList = ref<Array<{ name: string; description: string }>>([])
-const loadingSkills = ref(false)
-const skillSearchKeyword = ref('')
+const message = useMessage()
+const dialog = useDialog()
 
-const filteredSkillList = computed(() => {
-  const kw = skillSearchKeyword.value.trim().toLowerCase()
-  if (!kw) return skillList.value
-  return skillList.value.filter(
+// Tab
+const activeScope = ref<'common' | 'deep'>('common')
+
+// 已安装技能列表
+const installedSkills = ref<SkillInfo[]>([])
+const loadingInstalled = ref(false)
+
+// 已安装技能搜索
+const installedSearch = ref('')
+const selectedForBatch = ref<string[]>([])
+
+const filteredInstalled = computed(() => {
+  const kw = installedSearch.value.trim().toLowerCase()
+  if (!kw) return installedSkills.value
+  return installedSkills.value.filter(
     (s) =>
       s.name.toLowerCase().includes(kw) ||
       (s.description && s.description.toLowerCase().includes(kw)),
   )
 })
 
-async function loadSkills() {
-  if (loadingSkills.value) return
-  loadingSkills.value = true
+// GitHub 安装
+const githubRepo = ref('')
+const previewList = ref<SkillInfo[]>([])
+const selectedForInstall = ref<string[]>([])
+const loadingPreview = ref(false)
+const installing = ref(false)
+
+// Zip 上传
+const showUploadModal = ref(false)
+const uploadLoading = ref(false)
+
+// 全选预览
+const allPreviewSelected = computed({
+  get: () => previewList.value.length > 0 && selectedForInstall.value.length === previewList.value.length,
+  set: (val: boolean) => {
+    selectedForInstall.value = val ? previewList.value.map((s) => s.name) : []
+  },
+})
+
+// 全选已安装
+const allInstalledSelected = computed({
+  get: () => filteredInstalled.value.length > 0 && selectedForBatch.value.length === filteredInstalled.value.length,
+  set: (val: boolean) => {
+    selectedForBatch.value = val ? filteredInstalled.value.map((s) => s.name) : []
+  },
+})
+
+async function loadInstalledSkills() {
+  loadingInstalled.value = true
   try {
-    const res = await fetch_skill_list()
+    const res = await fetch_skill_list(activeScope.value)
     const data = await res.json().catch(() => ({}))
     if (data?.code === 200 && Array.isArray(data?.data)) {
-      skillList.value = data.data
+      installedSkills.value = data.data
     } else {
-      skillList.value = []
+      installedSkills.value = []
     }
   } catch {
-    skillList.value = []
+    installedSkills.value = []
   } finally {
-    loadingSkills.value = false
+    loadingInstalled.value = false
+  }
+}
+
+async function handlePreview() {
+  const repo = githubRepo.value.trim()
+  if (!repo) {
+    message.warning('请输入 GitHub 仓库，如 openclaw/openclaw')
+    return
+  }
+  loadingPreview.value = true
+  previewList.value = []
+  selectedForInstall.value = []
+  try {
+    const res = await preview_github_skills(repo)
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data?.code === 200 && Array.isArray(data?.data)) {
+      previewList.value = data.data
+      if (previewList.value.length === 0) {
+        message.info('该仓库未找到技能')
+      }
+    } else {
+      message.error(data?.msg || data?.message || '预览失败')
+    }
+  } catch (e) {
+    message.error('预览失败')
+  } finally {
+    loadingPreview.value = false
+  }
+}
+
+async function handleInstallSelected() {
+  if (selectedForInstall.value.length === 0) {
+    message.warning('请先选择要安装的技能')
+    return
+  }
+  installing.value = true
+  try {
+    const res = await install_from_github(githubRepo.value.trim(), selectedForInstall.value, activeScope.value)
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data?.code === 200) {
+      message.success('安装成功')
+      previewList.value = []
+      selectedForInstall.value = []
+      githubRepo.value = ''
+      await loadInstalledSkills()
+    } else {
+      message.error(data?.msg || data?.message || '安装失败')
+    }
+  } catch (e) {
+    message.error('安装失败')
+  } finally {
+    installing.value = false
+  }
+}
+
+async function handleToggle(skill: SkillInfo) {
+  const res = await toggle_skill(skill.name, !skill.enabled, activeScope.value)
+  const data = await res.json().catch(() => ({}))
+  if (res.ok && data?.code === 200) {
+    message.success(skill.enabled ? '已禁用' : '已启用')
+    await loadInstalledSkills()
+  } else {
+    message.error(data?.msg || data?.message || '操作失败')
+  }
+}
+
+async function handleUninstall(skill: SkillInfo) {
+  dialog.warning({
+    title: '确认卸载',
+    content: `确定要卸载技能「${skill.name}」吗？`,
+    positiveText: '卸载',
+    negativeText: '取消',
+    async onPositiveClick() {
+      const res = await uninstall_skill(skill.name, activeScope.value)
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.code === 200) {
+        message.success('已卸载')
+        await loadInstalledSkills()
+      } else {
+        message.error(data?.msg || data?.message || '卸载失败')
+      }
+    },
+  })
+}
+
+async function handleBatchToggle(enabled: boolean) {
+  const names = selectedForBatch.value
+  if (names.length === 0) {
+    message.warning('请先选择技能')
+    return
+  }
+  for (const name of names) {
+    await toggle_skill(name, enabled, activeScope.value)
+  }
+  message.success(enabled ? `已启用 ${names.length} 个技能` : `已禁用 ${names.length} 个技能`)
+  selectedForBatch.value = []
+  await loadInstalledSkills()
+}
+
+async function handleBatchUninstall() {
+  const names = selectedForBatch.value
+  if (names.length === 0) {
+    message.warning('请先选择技能')
+    return
+  }
+  dialog.warning({
+    title: '确认批量卸载',
+    content: `确定要卸载选中的 ${names.length} 个技能吗？`,
+    positiveText: '卸载',
+    negativeText: '取消',
+    async onPositiveClick() {
+      for (const name of names) {
+        await uninstall_skill(name, activeScope.value)
+      }
+      message.success(`已卸载 ${names.length} 个技能`)
+      selectedForBatch.value = []
+      await loadInstalledSkills()
+    },
+  })
+}
+
+async function handleZipUpload(file: File) {
+  uploadLoading.value = true
+  showUploadModal.value = false
+  try {
+    const res = await install_from_zip(file, activeScope.value)
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data?.code === 200) {
+      message.success('安装成功')
+      await loadInstalledSkills()
+    } else {
+      message.error(data?.msg || data?.message || '安装失败')
+    }
+  } catch (e) {
+    message.error('安装失败')
+  } finally {
+    uploadLoading.value = false
   }
 }
 
@@ -42,8 +224,15 @@ function handleBack() {
   router.push({ name: 'ChatIndex' })
 }
 
+function onScopeChange(scope: 'common' | 'deep') {
+  activeScope.value = scope
+  selectedForBatch.value = []
+  installedSearch.value = ''
+  loadInstalledSkills()
+}
+
 onMounted(() => {
-  loadSkills()
+  loadInstalledSkills()
 })
 </script>
 
@@ -62,55 +251,199 @@ onMounted(() => {
         技能中心
       </h1>
     </div>
-    <div class="skill-center-search-wrap">
-      <n-input
-        v-model:value="skillSearchKeyword"
-        placeholder="搜索技能名称或描述..."
-        clearable
-        size="large"
-        class="skill-center-search"
-      >
-        <template #prefix>
-          <div class="i-hugeicons:search-01 text-18 text-muted"></div>
-        </template>
-      </n-input>
+
+    <!-- Tab 切换 -->
+    <div class="skill-center-tabs">
+      <n-tabs v-model:value="activeScope" type="segment" @update:value="onScopeChange">
+        <n-tab name="common">智能问答</n-tab>
+        <n-tab name="deep">深度问数</n-tab>
+      </n-tabs>
     </div>
+
+    <!-- 智能问答/深度问数 Tab 统一内容 -->
     <div class="skill-center-body">
-      <div
-        v-if="loadingSkills"
-        class="skill-center-loading"
-      >
-        <n-spin size="medium" />
-        <span class="ml-2 text-gray-500">加载中...</span>
-      </div>
-      <div
-        v-else-if="filteredSkillList.length === 0"
-        class="skill-center-empty"
-      >
-        <div class="i-hugeicons:magic-wand-01 text-40 text-gray-300 mb-3"></div>
-        <span class="text-gray-400">{{ skillSearchKeyword ? '未找到匹配技能' : '暂无可用技能' }}</span>
-      </div>
-      <div
-        v-else
-        class="skill-center-cards"
-      >
-        <div
-          v-for="skill in filteredSkillList"
-          :key="skill.name"
-          class="skill-center-card"
-        >
-          <div class="skill-center-card-header">
-            <div class="skill-center-card-icon">
-              <div class="i-hugeicons:magic-wand-01 text-18"></div>
-            </div>
-            <span class="skill-center-card-name">{{ skill.name }}</span>
+      <!-- 安装区域 -->
+      <div class="install-section">
+        <div class="install-title text-14 font-medium mb-3">安装技能</div>
+
+        <div class="flex gap-2 mb-3">
+          <n-input
+            v-model:value="githubRepo"
+            :placeholder="activeScope === 'common' ? '输入 GitHub Skill仓库地址 - 安装到智能问答' : '输入 GitHub Skill仓库地址 - 安装到深度问数'"
+            class="flex-1"
+            @keydown.enter.prevent="handlePreview"
+          />
+          <n-button type="primary" :loading="loadingPreview" @click="handlePreview">
+            搜索技能
+          </n-button>
+          <n-button @click="showUploadModal = true">
+            上传 zip 包
+          </n-button>
+        </div>
+
+        <!-- GitHub 预览列表 -->
+        <div v-if="loadingPreview" class="py-4 text-center text-gray-400">
+          <n-spin size="small" /> 搜索中...
+        </div>
+        <div v-else-if="previewList.length > 0" class="preview-section">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-12 text-gray-500">
+              选择要安装的技能（共 {{ previewList.length }} 个）：
+            </span>
+            <n-checkbox
+              v-model:checked="allPreviewSelected"
+              label="全选"
+            />
           </div>
-          <div class="skill-center-card-desc">
-            {{ skill.description || '暂无描述' }}
+          <n-checkbox-group v-model:value="selectedForInstall">
+            <n-space>
+              <n-checkbox
+                v-for="s in previewList"
+                :key="s.name"
+                :value="s.name"
+                :label="s.name"
+              />
+            </n-space>
+          </n-checkbox-group>
+          <n-button
+            type="primary"
+            :disabled="selectedForInstall.length === 0"
+            :loading="installing"
+            class="mt-3"
+            @click="handleInstallSelected"
+          >
+            安装选中的技能 ({{ selectedForInstall.length }})
+          </n-button>
+        </div>
+      </div>
+
+      <!-- 已安装技能列表 -->
+      <div class="installed-section mt-6">
+        <div class="flex justify-between items-center mb-3">
+          <div class="install-title text-14 font-medium">已安装技能</div>
+          <div class="flex gap-2 items-center">
+            <n-input
+              v-model:value="installedSearch"
+              placeholder="搜索..."
+              size="small"
+              clearable
+              class="w-48"
+            />
+            <!-- 批量操作按钮（deep tab 不显示） -->
+            <template v-if="activeScope === 'common'">
+              <n-button
+                v-if="selectedForBatch.length > 0"
+                size="small"
+                type="warning"
+                @click="handleBatchToggle(false)"
+              >
+                禁用 ({{ selectedForBatch.length }})
+              </n-button>
+              <n-button
+                v-if="selectedForBatch.length > 0"
+                size="small"
+                type="error"
+                @click="handleBatchUninstall"
+              >
+                卸载 ({{ selectedForBatch.length }})
+              </n-button>
+            </template>
+          </div>
+        </div>
+
+        <div v-if="loadingInstalled" class="py-8 text-center">
+          <n-spin size="medium" />
+        </div>
+        <div v-else-if="filteredInstalled.length === 0" class="py-8 text-center text-gray-400">
+          {{ installedSearch ? '未找到匹配技能' : '暂无已安装技能' }}
+        </div>
+        <div v-else class="skill-list">
+          <!-- 全选行（仅 common tab 显示） -->
+          <div v-if="activeScope === 'common'" class="flex items-center gap-2 mb-2 pl-2">
+            <n-checkbox
+              v-model:checked="allInstalledSelected"
+              label="全选"
+            />
+          </div>
+          <div
+            v-for="skill in filteredInstalled"
+            :key="skill.name"
+            class="skill-card"
+          >
+            <!-- common tab: 带复选框的卡片 -->
+            <template v-if="activeScope === 'common'">
+              <div class="skill-card-left">
+                <n-checkbox
+                  :value="skill.name"
+                  v-model:checked="selectedForBatch"
+                />
+                <div class="skill-card-info">
+                  <div class="skill-card-header">
+                    <div class="skill-card-icon">
+                      <div class="i-hugeicons:magic-wand-01 text-16"></div>
+                    </div>
+                    <span class="skill-card-name">{{ skill.name }}</span>
+                    <n-tag v-if="!skill.enabled" size="small" type="warning">已禁用</n-tag>
+                  </div>
+                  <div class="skill-card-desc">{{ skill.description || '暂无描述' }}</div>
+                </div>
+              </div>
+              <div class="skill-card-actions">
+                <n-button
+                  size="small"
+                  :type="skill.enabled ? 'warning' : 'success'"
+                  @click="handleToggle(skill)"
+                >
+                  {{ skill.enabled ? '禁用' : '启用' }}
+                </n-button>
+                <n-button size="small" type="error" @click="handleUninstall(skill)">
+                  卸载
+                </n-button>
+              </div>
+            </template>
+            <!-- deep tab: 不带复选框的卡片 -->
+            <template v-else>
+              <div class="skill-card-info">
+                <div class="skill-card-header">
+                  <div class="skill-card-icon">
+                    <div class="i-hugeicons:magic-wand-01 text-16"></div>
+                  </div>
+                  <span class="skill-card-name">{{ skill.name }}</span>
+                  <n-tag v-if="!skill.enabled" size="small" type="warning">已禁用</n-tag>
+                </div>
+                <div class="skill-card-desc">{{ skill.description || '暂无描述' }}</div>
+              </div>
+              <div class="skill-card-actions">
+                <n-button
+                  size="small"
+                  :type="skill.enabled ? 'warning' : 'success'"
+                  @click="handleToggle(skill)"
+                >
+                  {{ skill.enabled ? '禁用' : '启用' }}
+                </n-button>
+                <n-button size="small" type="error" @click="handleUninstall(skill)">
+                  卸载
+                </n-button>
+              </div>
+            </template>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Zip 上传弹窗 -->
+    <n-modal v-model:show="showUploadModal" preset="dialog" title="上传技能 zip 包">
+      <n-upload
+        accept=".zip"
+        :max="1"
+        @change="(options: any) => {
+          const file = options?.file?.file
+          if (file) handleZipUpload(file)
+        }"
+      >
+        <n-button :loading="uploadLoading">选择 zip 文件</n-button>
+      </n-upload>
+    </n-modal>
   </div>
 </template>
 
@@ -174,28 +507,16 @@ $primary-color: #7e6bf2;
   color: $primary-color;
 }
 
-.skill-center-search-wrap {
+.skill-center-tabs {
   flex-shrink: 0;
-  padding: 16px 24px;
-}
-
-.skill-center-search {
-  max-width: 360px;
-
-  :deep(.n-input__input-el)::placeholder {
-    color: $text-muted;
-  }
-}
-
-.text-muted {
-  color: $text-muted;
+  padding: 12px 24px 0;
 }
 
 .skill-center-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 24px 32px;
+  padding: 16px 24px 32px;
   -webkit-overflow-scrolling: touch;
 
   &::-webkit-scrollbar {
@@ -212,58 +533,75 @@ $primary-color: #7e6bf2;
   }
 }
 
-.skill-center-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
-}
-
-.skill-center-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 64px 16px;
-  color: $text-muted;
-  font-size: 14px;
-}
-
-.skill-center-cards {
-  display: grid;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-.skill-center-card {
-  padding: 18px 20px;
+.install-section {
+  padding: 16px;
   border-radius: $radius-lg;
   border: 1px solid rgba(226, 232, 240, 0.7);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.installed-section {
+  padding: 16px;
+  border-radius: $radius-lg;
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.preview-section {
+  padding: 12px;
+  border-radius: $radius-md;
+  background: rgba(126, 107, 242, 0.04);
+  border: 1px solid rgba(126, 107, 242, 0.1);
+}
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skill-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: $radius-md;
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  background: rgba(255, 255, 255, 0.6);
   transition: border-color 0.2s, box-shadow 0.2s;
 
   &:hover {
-    border-color: rgba(126, 107, 242, 0.4);
-    box-shadow: 0 4px 20px rgba(126, 107, 242, 0.08);
+    border-color: rgba(126, 107, 242, 0.3);
+    box-shadow: 0 2px 8px rgba(126, 107, 242, 0.06);
   }
 }
 
-.skill-center-card-header {
+.skill-card-left {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
-.skill-center-card-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(
-    135deg,
-    rgba(126, 107, 242, 0.12) 0%,
-    rgba(126, 107, 242, 0.06) 100%
-  );
+.skill-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.skill-card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, rgba(126, 107, 242, 0.12) 0%, rgba(126, 107, 242, 0.06) 100%);
   color: $primary-color;
   display: flex;
   align-items: center;
@@ -271,18 +609,23 @@ $primary-color: #7e6bf2;
   flex-shrink: 0;
 }
 
-.skill-center-card-name {
-  font-size: 15px;
+.skill-card-name {
+  font-size: 14px;
   font-weight: 600;
   color: $text-primary;
-  letter-spacing: 0.01em;
 }
 
-.skill-center-card-desc {
-  font-size: 13px;
+.skill-card-desc {
+  font-size: 12px;
   color: $text-secondary;
-  line-height: 1.55;
-  margin-left: 48px;
+  line-height: 1.5;
   word-break: break-word;
+  margin-left: 36px;
+}
+
+.skill-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 </style>

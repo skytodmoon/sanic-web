@@ -9,7 +9,7 @@ import requests
 
 # ClaudeSDKAgent 已不再使用，改用 CommonReactAgent
 # from agent.claude_sdk_agent import ClaudeSDKAgent
-from agent.common_react_agent import CommonReactAgent
+from agent.common.enhanced_common_agent import EnhancedCommonAgent
 from agent.deepagent.deep_research_agent import DeepAgent
 from agent.excel.excel_agent import ExcelAgent
 from agent.text2sql.text2_sql_agent import Text2SqlAgent
@@ -36,7 +36,7 @@ class QaContext:
 
 
 # common_agent = ClaudeSDKAgent()
-common_agent = CommonReactAgent()
+common_agent = EnhancedCommonAgent()
 sql_agent = Text2SqlAgent()
 excel_agent = ExcelAgent()
 deep_agent = DeepAgent()
@@ -91,8 +91,10 @@ class LLMRequest:
 
             # 调用智能体
             if qa_type == IntentEnum.COMMON_QA.value[0]:
+                selected_skills = req_obj.get("selected_skills")
                 await common_agent.run_agent(
-                    query, res, chat_id, uuid_str, token, file_list
+                    query, res, chat_id, uuid_str, token, file_list,
+                    selected_skills=selected_skills,
                 )
                 return None
             elif qa_type == IntentEnum.DATABASE_QA.value[0]:

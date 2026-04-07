@@ -1,0 +1,68 @@
+[
+  {
+    "type": "h1",
+    "text": "PDF测试文档"
+  },
+  {
+    "type": "body",
+    "text": "这是一个使用minimax-pdf技能生成的测试PDF文档。该技能专注于创建视觉精美、专业级别的PDF文档。"
+  },
+  {
+    "type": "h2",
+    "text": "功能测试"
+  },
+  {
+    "type": "bullet",
+    "text": "标题和段落文本"
+  },
+  {
+    "type": "bullet",
+    "text": "项目符号列表"
+  },
+  {
+    "type": "numbered",
+    "text": "编号列表项一"
+  },
+  {
+    "type": "numbered",
+    "text": "编号列表项二"
+  },
+  {
+    "type": "callout",
+    "text": "这是一个突出显示框，用于强调重要信息。"
+  },
+  {
+    "type": "h2",
+    "text": "表格测试"
+  },
+  {
+    "type": "table",
+    "headers": ["项目", "数量", "价格"],
+    "rows": [
+      ["产品A", "10", "¥100"],
+      ["产品B", "5", "¥200"],
+      ["产品C", "8", "¥150"]
+    ],
+    "caption": "示例产品表格"
+  },
+  {
+    "type": "divider"
+  },
+  {
+    "type": "h2",
+    "text": "代码示例"
+  },
+  {
+    "type": "code",
+    "text": "def hello_world():\n    print(\"Hello, PDF!\")\n    return \"PDF生成成功\"",
+    "language": "python"
+  },
+  {
+    "type": "spacer",
+    "pt": 20
+  },
+  {
+    "type": "body",
+    "text": "测试完成。这是一个简单的PDF文档，展示了minimax-pdf技能的基本功能。"
+  }
+]

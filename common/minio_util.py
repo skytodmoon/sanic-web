@@ -442,6 +442,31 @@ class MinioUtils:
             logger.error(f"读取文本时出错: {e}")
             raise MyException(SysCode.c_9999, "PDF 解析失败") from e
 
+    def download_file(self, object_key: str, local_path: str, bucket_name: str = "filedata") -> bool:
+        """从 MinIO 下载文件到本地路径
+
+        参数:
+        - object_key: MinIO 中的对象 key
+        - local_path: 本地保存路径
+        - bucket_name: 存储桶名称
+
+        返回:
+        - True 下载成功，False 下载失败
+        """
+        try:
+            self.ensure_bucket(bucket_name)
+            response = self.client.get_object(bucket_name=bucket_name, object_name=object_key)
+            with open(local_path, "wb") as f:
+                for data in response.stream(amt=8192):
+                    f.write(data)
+            response.close()
+            response.release_conn()
+            logger.info(f"文件下载成功: {object_key} -> {local_path}")
+            return True
+        except Exception as e:
+            logger.error(f"下载文件失败 {object_key}: {e}")
+            return False
+
     def get_files_content_as_markdown(
         self, file_info_list: list, bucket_name: str = "filedata"
     ) -> str:

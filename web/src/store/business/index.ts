@@ -13,6 +13,7 @@ export interface BusinessState {
     file_size: string
   }[]
   suggestedDisabled: boolean
+  selectedSkills: string[]
 }
 
 export const useBusinessStore = defineStore('business-store', {
@@ -29,6 +30,8 @@ export const useBusinessStore = defineStore('business-store', {
       record_id: null,
       // 全局推荐问题禁用状态
       suggestedDisabled: false,
+      // 智能问答选中的技能
+      selectedSkills: [],
     }
   },
   actions: {

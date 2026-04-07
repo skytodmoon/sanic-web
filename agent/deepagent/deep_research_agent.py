@@ -34,6 +34,7 @@ from agent.deepagent.tools.native_sql_tools import (
     sql_db_table_relationship,
 )
 from agent.deepagent.tools.tool_call_manager import get_tool_call_manager
+from services.skill_service import SkillService
 from common.datasource_util import (
     DB,
     ConnectType,
@@ -145,38 +146,9 @@ class DeepAgent:
 
     def _load_available_skills(self):
         """加载所有可用的技能"""
-        skills_dir = os.path.join(current_dir, "skills")
-        skills = []
-        if os.path.exists(skills_dir):
-            for skill_dir in os.listdir(skills_dir):
-                skill_path = os.path.join(skills_dir, skill_dir)
-                if os.path.isdir(skill_path):
-                    skill_file = os.path.join(skill_path, "SKILL.md")
-                    if os.path.exists(skill_file):
-                        try:
-                            with open(skill_file, "r", encoding="utf-8") as f:
-                                content = f.read()
-                                if content.startswith("---"):
-                                    parts = content.split("---", 2)
-                                    if len(parts) >= 3:
-                                        frontmatter = parts[1]
-                                        skill_info = {}
-                                        for line in frontmatter.strip().split("\n"):
-                                            if ":" in line:
-                                                key, value = line.split(":", 1)
-                                                skill_info[key.strip()] = (
-                                                    value.strip().strip('"')
-                                                )
-                                        skill_info["name"] = skill_info.get(
-                                            "name", skill_dir
-                                        )
-                                        skill_info["description"] = skill_info.get(
-                                            "description", ""
-                                        )
-                                        skills.append(skill_info)
-                        except Exception as e:
-                            logger.warning(f"加载技能 {skill_dir} 失败: {e}")
-        return skills
+        from services.skill_service import SkillService
+
+        return SkillService.list_skills(scope="deep")
 
     def get_available_skills(self):
         """获取所有可用的技能列表"""
@@ -403,10 +375,12 @@ class DeepAgent:
                     sql_db_table_relationship,
                 ]
 
+        # 获取启用的 deep skill 路径
+        skill_paths = SkillService.get_enabled_skill_paths(scope="deep")
         agent = create_deep_agent(
             model=model,
             memory=[os.path.join(current_dir, "AGENTS.md")],
-            skills=[os.path.join(current_dir, "skills/")],
+            skills=skill_paths if skill_paths else None,
             tools=sql_tools,
             backend=FilesystemBackend(root_dir=current_dir),
         )
