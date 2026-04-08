@@ -269,10 +269,10 @@ async def retrieve_user_memories(
             profile_items = _collect_profile_items(legacy_profile_results)
         memory_context["profile"] = _sort_profile_memories(profile_items)[:profile_limit]
 
-        if session_id and query:
+        if session_id:
+            # 按时间排序获取当前会话的 episodic 记忆，避免 embedding 生成延迟
             episodic_results = await store.asearch(
                 ("user", str(user_id), "episodic"),
-                query=query,
                 filter={
                     "memory_kind": "episodic",
                     "scope_type": DEFAULT_SCOPE_TYPE,
@@ -286,7 +286,6 @@ async def retrieve_user_memories(
                     _serialize_memory_item(item) for item in episodic_results
                 )
                 if serialized["content"]
-                and serialized["score"] >= EPISODIC_MEMORY_SCORE_THRESHOLD
             ][:episodic_limit]
 
         return memory_context

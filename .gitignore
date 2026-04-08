@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Agent workspace (generated files)
+agent_workspace/
+
 tests/
 !tests/
 tests/*

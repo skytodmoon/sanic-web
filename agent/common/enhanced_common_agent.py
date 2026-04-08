@@ -8,7 +8,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import traceback
 from dataclasses import dataclass
 from enum import Enum
@@ -33,6 +32,8 @@ from services.user_service import add_user_record, decode_jwt_token
 logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).parent
+project_root = current_dir.parent.parent  # Aix-DB 项目根目录
+agent_workspace_dir = project_root / "agent_workspace"
 minio_utils = MinioUtils()
 
 
@@ -67,54 +68,45 @@ class PhaseTracker:
             self.current_tool_output = []
 
 
-# ==================== <details> 标签模板 ====================
-
-THINKING_SECTION_OPEN = (
-    '<details open style="margin:8px 0;padding:8px 12px;background:#f8f9fa;'
-    "border-left:3px solid #4a90d9;border-radius:4px;font-size:14px;color:#555"
-    '">\n'
-    '<summary style="cursor:pointer;font-weight:600;color:#333">'
-    "🧠 思考与规划</summary>\n\n"
-)
+# ==================== 样式模板 ====================
 
 SECTION_CLOSE = "\n</details>\n\n"
 
-EXECUTION_SECTION_HEADER = (
-    "\n<br>\n\n"
-    '<details open style="margin:12px 0;padding:12px 16px;background:#fff3e0;'
-    "border-left:4px solid #ff9800;border-radius:4px;font-size:14px;color:#555"
-    '">\n'
-    '<summary style="cursor:pointer;font-weight:600;color:#e65100">'
-    "⚙️ 执行中</summary>\n\n"
+# 执行区：折叠，包裹工具调用过程
+EXECUTION_SECTION_OPEN = (
+    '<details style="margin:6px 0;padding:6px 12px;'
+    'border-left:3px solid #42a5f5;border-radius:3px;color:#666">\n'
+    '<summary style="cursor:pointer;font-weight:600;color:#1565c0">'
+    '⚡ 工具调用过程</summary>\n\n'
 )
 
-REPORTING_SECTION_HEADER = (
-    "\n<br>\n\n"
-    '<details open style="margin:12px 0;padding:12px 16px;background:#e8f5e9;'
-    "border-left:4px solid #4caf50;border-radius:4px;font-size:14px;color:#555"
-    '">\n'
+# 工具调用标签（紧凑行内）
+TOOL_LABEL = '<span style="color:#1976d2;font-size:13px">🔧 **{name}**</span>\n\n'
+
+# Todo 状态图标
+TODO_STATUS_ICONS = {"pending": "○", "in_progress": "◉", "completed": "✓"}
+
+TODO_SECTION_OPEN = (
+    '<details open style="margin:6px 0;padding:6px 12px;'
+    'border-left:3px solid #66bb6a;border-radius:3px;color:#666">\n'
     '<summary style="cursor:pointer;font-weight:600;color:#2e7d32">'
-    "📋 回答</summary>\n\n"
+    '📋 任务计划</summary>\n\n'
 )
 
-TOOL_DETAIL_OPEN = (
-    '<details style="margin:8px 0;padding:8px 12px;background:#fafafa;'
-    "border:1px solid #e0e0e0;border-radius:4px;font-size:13px"
-    '">\n'
-    '<summary style="cursor:pointer;font-weight:500;color:#1976d2">'
-)
 
-TOOL_RESULT_PREFIX = '**结果：** '
+def _format_tool_label(tool_name: str) -> str:
+    """工具调用标签（直接可见）"""
+    return TOOL_LABEL.format(name=tool_name)
 
 
-def _format_tool_header(tool_name: str) -> str:
-    """格式化工具调用头部"""
-    return f"{TOOL_DETAIL_OPEN}🔧 {tool_name}</summary>\n\n"
-
-
-def _format_tool_result(result_preview: str) -> str:
-    """格式化工具结果预览"""
-    return f"\n{TOOL_RESULT_PREFIX}{result_preview}\n\n{SECTION_CLOSE}"
+def _format_todos(todos: list) -> str:
+    """将 todo 列表格式化为带状态图标的文本"""
+    lines = []
+    for t in todos:
+        icon = TODO_STATUS_ICONS.get(t.get("status", "pending"), "○")
+        content = t.get("content", "")
+        lines.append(f"  {icon} {content}")
+    return TODO_SECTION_OPEN + "\n".join(lines) + SECTION_CLOSE
 
 
 # ==================== EnhancedCommonAgent 主类 ====================
@@ -174,8 +166,8 @@ class EnhancedCommonAgent:
     # ==================== 文件下载 ====================
 
     def _download_files_to_workspace(self, file_list: list) -> list:
-        """将 MinIO 中的原始文件下载到本地工作目录，返回文件信息列表"""
-        workspace_dir = current_dir / "workspace"
+        """将 MinIO 中的原始文件下载到项目级工作目录，返回文件信息列表"""
+        workspace_dir = agent_workspace_dir
         workspace_dir.mkdir(exist_ok=True)
 
         downloaded_files = []
@@ -241,13 +233,19 @@ class EnhancedCommonAgent:
         self,
         selected_skills=None,
         system_prompt: Optional[str] = None,
+        mcp_tools: Optional[list] = None,
     ):
-        """创建 deep agent 实例"""
+        """创建 deep agent 实例
+
+        Args:
+            mcp_tools: 预获取的 MCP 工具列表，为 None 时内部获取
+        """
         # 延迟初始化 PostgreSQL checkpointer
         if self.checkpointer is None:
             self.checkpointer = await get_postgres_checkpointer()
 
-        mcp_tools = await self._get_mcp_tools()
+        if mcp_tools is None:
+            mcp_tools = await self._get_mcp_tools()
         memory_tools = get_memory_tools()
         all_tools = list(mcp_tools) + memory_tools
 
@@ -256,6 +254,7 @@ class EnhancedCommonAgent:
         skill_paths = SkillService.get_enabled_skill_paths(selected_skills)
 
         model = get_llm(timeout=self.DEFAULT_LLM_TIMEOUT)
+        agent_workspace_dir.mkdir(exist_ok=True)
         return create_deep_agent(
             model=model,
             tools=all_tools,
@@ -263,7 +262,7 @@ class EnhancedCommonAgent:
             memory=[str(current_dir / "AGENTS.md")],
             skills=skill_paths if skill_paths else None,
             backend=LocalShellBackend(
-                root_dir=str(current_dir),
+                root_dir=str(agent_workspace_dir),
                 inherit_env=True,
                 timeout=120.0,
             ),
@@ -372,45 +371,59 @@ class EnhancedCommonAgent:
         self, agent, config, query, response, session_id, answer_collector
     ):
         """
-        流式响应处理 - 先思考后执行：
-        1. 缓冲所有思考内容
-        2. 检测到工具调用后，一次性输出思考区（带完整 HTML 结构）
-        3. 然后开始工具执行
-        4. 最后输出回答区
+        流式响应处理 - 实时输出：
+        1. AI 文本实时输出（不缓冲）
+        2. 工具调用过程折叠在 <details> 中，但结果直接展示
+        3. 工具执行后的回答直接输出
         """
         import uuid
 
         tracker = PhaseTracker()
         last_keepalive = asyncio.get_event_loop().time()
-        langgraph_node = ""
         progress_id = str(uuid.uuid4())
-
-        # 思考内容缓冲（用于先思考后执行）
-        thinking_buffer: list[str] = []
 
         # 辅助：统一写入（发送到前端 + 收集到 answer_collector）
         async def write_and_collect(content: str):
-            """写入响应并收集到 answer_collector（用于保存到 DB）"""
             await self._safe_write(response, content)
             answer_collector.append(content)
 
+        async def enter_execution():
+            """首次工具调用时切换到执行阶段"""
+            if tracker.current_phase == Phase.EXECUTION:
+                return
+            tracker.current_phase = Phase.EXECUTION
+            tracker.has_tool_called = True
+            await self._send_phase_progress(
+                response, Phase.EXECUTION, "start", progress_id
+            )
+            # 打开折叠的工具调用过程区域
+            await write_and_collect(EXECUTION_SECTION_OPEN)
+            tracker.execution_opened = True
+
+        async def close_execution_enter_reporting():
+            """关闭执行区，进入回答阶段"""
+            if tracker.execution_opened:
+                await write_and_collect(SECTION_CLOSE)
+                tracker.execution_opened = False
+            tracker.current_phase = Phase.REPORTING
+            await self._send_phase_progress(
+                response, Phase.REPORTING, "start", progress_id
+            )
+
         try:
-            # 发送 planning 开始
             await self._send_phase_progress(
                 response, Phase.PLANNING, "start", progress_id
             )
 
-            async for message_chunk, metadata in agent.astream(
+            async for mode, chunk in agent.astream(
                 {"messages": [{"role": "user", "content": query}]},
                 config,
-                stream_mode="messages",
+                stream_mode=["messages", "updates"],
             ):
                 # 检查是否已取消
                 if self.running_tasks.get(session_id, {}).get("cancelled"):
                     await self._safe_write(
-                        response,
-                        "\n> 这条消息已停止",
-                        "info",
+                        response, "\n> 这条消息已停止", "info",
                     )
                     await self._safe_write(response, "", "end")
                     return
@@ -427,103 +440,62 @@ class EnhancedCommonAgent:
                     except Exception:
                         pass
 
-                # 获取当前节点名
+                # ===== updates 模式：捕获 todos 更新 =====
+                if mode == "updates":
+                    if isinstance(chunk, dict):
+                        for node_name, node_output in chunk.items():
+                            if not isinstance(node_output, dict):
+                                continue
+                            todos = node_output.get("todos")
+                            if todos and isinstance(todos, list):
+                                await write_and_collect(_format_todos(todos))
+                    continue
+
+                # ===== messages 模式 =====
+                message_chunk, metadata = chunk
                 langgraph_node = metadata.get("langgraph_node", "")
 
-                # 提取文本内容
                 text = (
                     self._extract_text(message_chunk.content)
                     if hasattr(message_chunk, "content")
                     else ""
                 )
 
-                # ===== 工具调用节点 =====
+                # ===== 工具调用节点：折叠在执行区内 =====
                 if langgraph_node == "tools":
-                    # 首次工具调用：从 PLANNING 切换到 EXECUTION
-                    if tracker.current_phase == Phase.PLANNING:
-                        tracker.current_phase = Phase.EXECUTION
-                        # 一次性输出完整的思考区（包含之前缓冲的所有内容）
-                        thinking_content = "".join(thinking_buffer)
-                        thinking_full = (
-                            THINKING_SECTION_OPEN
-                            + thinking_content
-                            + SECTION_CLOSE
-                        )
-                        # 发送完整的思考区到前端
-                        await write_and_collect(thinking_full)
-                        # 发送 execution 开始
-                        await self._send_phase_progress(
-                            response, Phase.EXECUTION, "start", progress_id
-                        )
-                        # 打开执行区标题
-                        await write_and_collect(EXECUTION_SECTION_HEADER)
-                        tracker.execution_opened = True
-
-                    # 获取工具名
                     tool_name = getattr(message_chunk, "name", None) or "未知工具"
 
-                    # 同一工具的输出继续累积，不重复开 details
-                    if tool_name != tracker.current_tool_name:
-                        # 关闭上一个 tool details（如果存在）
-                        if tracker.current_tool_name:
-                            await write_and_collect(SECTION_CLOSE)
-                        # 打开新的 tool details
-                        await write_and_collect(_format_tool_header(tool_name))
-                        tracker.current_tool_name = tool_name
-                        tracker.current_tool_output = []
+                    # 跳过 write_todos（已通过 updates 展示）
+                    if tool_name == "write_todos":
+                        continue
 
-                    # 工具输出
+                    await enter_execution()
+
+                    # 工具切换时输出标签
+                    if tool_name != tracker.current_tool_name:
+                        tracker.current_tool_name = tool_name
+                        await write_and_collect(_format_tool_label(tool_name))
+
                     if text:
                         await write_and_collect(text)
-                        tracker.current_tool_output.append(text)
                     continue
 
-                # ===== 非工具节点 =====
-                # 切换到 REPORTING 阶段（当出现非工具内容且之前有工具调用时）
-                if (
-                    tracker.current_phase == Phase.EXECUTION
-                    and langgraph_node != "tools"
-                    and text
-                ):
-                    tracker.current_phase = Phase.REPORTING
-                    # 关闭执行区
-                    if tracker.current_tool_name:
-                        await write_and_collect(SECTION_CLOSE)
-                        tracker.current_tool_name = ""
-                    if tracker.execution_opened:
-                        tracker.execution_opened = False
-                    # 发送 reporting 开始
-                    await self._send_phase_progress(
-                        response, Phase.REPORTING, "start", progress_id
-                    )
-                    # 打开回答区标题
-                    await write_and_collect(REPORTING_SECTION_HEADER)
-                    tracker.reporting_opened = True
-
-                # ===== PLANNING 阶段：缓冲思考内容（不立即输出） =====
-                if tracker.current_phase == Phase.PLANNING and text:
-                    thinking_buffer.append(text)
+                # ===== 非工具节点的 AI 文本 =====
+                if not text:
                     continue
 
-                # ===== REPORTING 阶段：直接输出回答内容 =====
-                if tracker.current_phase == Phase.REPORTING and text:
-                    await write_and_collect(text)
-
-            # ===== 完成后清理 =====
-            final_phase = tracker.current_phase
-            if final_phase == Phase.PLANNING:
-                # 没有工具调用，纯思考回答
-                thinking_content = "".join(thinking_buffer)
-                thinking_full = (
-                    THINKING_SECTION_OPEN + thinking_content + SECTION_CLOSE
-                )
-                await write_and_collect(thinking_full)
-            elif final_phase == Phase.EXECUTION:
-                if tracker.current_tool_name:
-                    await write_and_collect(SECTION_CLOSE)
+                # 从执行阶段切换到回答阶段
+                if tracker.current_phase == Phase.EXECUTION:
                     tracker.current_tool_name = ""
-                if tracker.execution_opened:
-                    tracker.execution_opened = False
+                    await close_execution_enter_reporting()
+
+                # 直接实时输出（无论是 PLANNING 还是 REPORTING）
+                await write_and_collect(text)
+
+            # ===== 流结束清理 =====
+            if tracker.execution_opened:
+                await write_and_collect(SECTION_CLOSE)
+                tracker.execution_opened = False
 
         except asyncio.CancelledError:
             await self._safe_write(response, "\n> 这条消息已停止", "info")
@@ -593,22 +565,32 @@ class EnhancedCommonAgent:
                 "recursion_limit": self.DEFAULT_RECURSION_LIMIT,
             }
 
-            # === 对话前：注入用户历史记忆 ===
+            # === 对话前：并行获取用户记忆 + MCP 工具（减少等待时间）===
             memory_context = {"profile": [], "episodic": []}
-            try:
-                memory_context = await retrieve_user_memories(
-                    self.memory_store,
-                    str(task_id),
-                    session_id=thread_id if session_id else None,
-                    query=query,
-                )
-            except Exception as e:
-                logger.warning(f"检索用户记忆失败，跳过: {e}")
+            memory_coro = retrieve_user_memories(
+                self.memory_store,
+                str(task_id),
+                session_id=thread_id if session_id else None,
+            )
+            mcp_coro = self._get_mcp_tools()
+            results = await asyncio.gather(
+                memory_coro, mcp_coro, return_exceptions=True
+            )
+
+            if isinstance(results[0], Exception):
+                logger.warning(f"检索用户记忆失败，跳过: {results[0]}")
+            else:
+                memory_context = results[0]
+
+            mcp_tools = results[1] if not isinstance(results[1], Exception) else []
+            if isinstance(results[1], Exception):
+                logger.warning(f"获取 MCP 工具失败，跳过: {results[1]}")
 
             # 创建 agent
             agent = await self._create_agent(
                 selected_skills,
                 system_prompt=self._build_runtime_system_prompt(memory_context),
+                mcp_tools=mcp_tools,
             )
 
             # 带超时保护的任务
@@ -693,10 +675,12 @@ class EnhancedCommonAgent:
                 "error",
             )
         finally:
-            # 清理本地工作目录中的临时文件
-            workspace_dir = current_dir / "workspace"
-            if workspace_dir.exists():
-                shutil.rmtree(workspace_dir, ignore_errors=True)
+            # 仅清理上传的临时文件，保留 agent 生成的文件供用户获取
+            for f in downloaded_files:
+                try:
+                    Path(f["local_path"]).unlink(missing_ok=True)
+                except Exception:
+                    pass
             if task_id in self.running_tasks:
                 del self.running_tasks[task_id]
 
