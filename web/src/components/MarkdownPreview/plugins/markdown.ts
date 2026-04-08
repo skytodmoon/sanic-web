@@ -26,8 +26,7 @@ function renderHighlightedCode(code: string, language: string) {
 
     const highlighted = hljs.highlightAuto(code).value
     return `<pre class="hljs"><code>${highlighted}</code></pre>`
-  }
-  catch {
+  } catch {
     return `<pre class="hljs"><code>${escapeHtml(code)}</code></pre>`
   }
 }
@@ -50,6 +49,5 @@ md.renderer.rules.image = function (tokens, idx, options, env, self) {
 md.use(preWrapperPlugin, {
   hasSingleTheme: true,
 })
-
 
 export default md

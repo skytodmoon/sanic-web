@@ -37,8 +37,15 @@ import importlib.util
 
 # ── Dependency bootstrap ───────────────────────────────────────────────────────
 def ensure_deps():
-    # 跳过依赖检查，假设依赖已安装
-    pass
+    missing = [p for p in ("reportlab", "pypdf")
+               if importlib.util.find_spec(p) is None]
+    if missing:
+        import subprocess
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install",
+             "--break-system-packages", "-q"] + missing
+        )
+
 
 ensure_deps()
 
@@ -295,7 +302,7 @@ def _image_from_bytes(png_bytes: bytes, usable_w: float,
 # PNG renderers (matplotlib)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _render_math_png(expr: str, dpi: int = 180):
+def _render_math_png(expr: str, dpi: int = 180) -> bytes | None:
     """
     Render a LaTeX math expression via matplotlib mathtext.
     No LaTeX binary required — uses matplotlib's built-in math parser.
@@ -325,7 +332,7 @@ def _render_math_png(expr: str, dpi: int = 180):
         return None
 
 
-def _render_chart_png(item: dict, accent: str, dpi: int = 150):
+def _render_chart_png(item: dict, accent: str, dpi: int = 150) -> bytes | None:
     """
     Render bar / line / pie chart to PNG using matplotlib.
 
@@ -439,7 +446,7 @@ def _render_chart_png(item: dict, accent: str, dpi: int = 150):
 
 
 def _render_flowchart_png(item: dict, accent: str, dark: str,
-                           muted: str, dpi: int = 130):
+                           muted: str, dpi: int = 130) -> bytes | None:
     """
     Render a top-to-bottom flowchart using matplotlib patches and arrows.
 

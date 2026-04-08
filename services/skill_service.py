@@ -386,3 +386,38 @@ class SkillService:
                 continue
 
         return []
+
+    @classmethod
+    def get_skill_content(cls, skill_name: str, scope: str = "common") -> dict | None:
+        """获取技能的 SKILL.md 内容（去除 front matter）"""
+        skills_dir = cls.get_skills_dir(scope)
+        skill_dir = skills_dir / skill_name
+        skill_file = skill_dir / "SKILL.md"
+
+        if not skill_file.exists():
+            logger.warning(f"技能 '{skill_name}' 的 SKILL.md 不存在于 {scope} 目录")
+            return None
+
+        try:
+            with open(skill_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            description = ""
+            # 去除 YAML front matter 并提取 description
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    front_matter = parts[1].strip()
+                    meta = yaml.safe_load(front_matter)
+                    if isinstance(meta, dict):
+                        description = meta.get("description") or ""
+                    content = parts[2].strip()
+
+            return {
+                "name": skill_name,
+                "description": description,
+                "content": content,
+            }
+        except Exception as e:
+            logger.error(f"读取技能文件失败 {skill_file}: {e}")
+            return None

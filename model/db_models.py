@@ -4,12 +4,14 @@ from typing import List, Optional, Union
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Float,
     Integer,
     String,
     TIMESTAMP,
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import VECTOR
 
@@ -158,3 +160,32 @@ class TDataTraining(Base):
     )
     enabled: Mapped[Optional[bool]] = mapped_column(Boolean, default=True, comment="是否启用")
     advanced_application: Mapped[Optional[int]] = mapped_column(BigInteger, comment="高级应用ID")
+
+
+class TAgentMemory(Base):
+    __tablename__ = "t_agent_memory"
+    __table_args__ = {"comment": "Agent 长期记忆表"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    namespace: Mapped[str] = mapped_column(Text, nullable=False, index=True, comment="命名空间，点分格式")
+    key: Mapped[str] = mapped_column(String(255), nullable=False, comment="记忆键")
+    user_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, comment="用户ID")
+    memory_kind: Mapped[Optional[str]] = mapped_column(String(32), index=True, comment="记忆类型：profile/episodic")
+    scope_type: Mapped[Optional[str]] = mapped_column(String(32), comment="作用域类型")
+    scope_id: Mapped[Optional[str]] = mapped_column(String(255), comment="作用域ID")
+    slot: Mapped[Optional[str]] = mapped_column(String(64), comment="稳定槽位")
+    source_record_id: Mapped[Optional[int]] = mapped_column(BigInteger, comment="来源问答记录ID")
+    confidence: Mapped[Optional[float]] = mapped_column(Float, comment="提取置信度")
+    value: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=False, comment="记忆值（JSONB）")
+    embedding: Mapped[Optional[Union[List[float], str]]] = mapped_column(
+        VECTOR, nullable=True, comment="向量数据（pgvector VECTOR 类型）"
+    )
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
+    )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), comment="更新时间"
+    )
+    expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        TIMESTAMP, nullable=True, comment="过期时间"
+    )

@@ -8,6 +8,12 @@ export interface SkillInfo {
   description: string
   enabled: boolean
   scope: 'common' | 'deep'
+  path?: string
+}
+
+export interface SkillContent {
+  name: string
+  content: string
 }
 
 /**
@@ -27,6 +33,50 @@ export async function fetch_skill_list(scope?: string): Promise<Response> {
     headers: {
       Authorization: `Bearer ${token}`,
     },
+  })
+  return fetch(req)
+}
+
+/**
+ * 获取技能详情内容（SKILL.md）
+ * @param name 技能名称
+ * @param scope 可选，'common' | 'deep'，不传则默认 common
+ */
+export async function fetch_skill_content(name: string, scope?: string): Promise<Response> {
+  const userStore = useUserStore()
+  const token = userStore.getUserToken()
+  const url = new URL(`${location.origin}/sanic/system/skill/content`)
+  url.searchParams.append('name', name)
+  if (scope) {
+    url.searchParams.append('scope', scope)
+  }
+  const req = new Request(url, {
+    mode: 'cors',
+    method: 'get',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+  return fetch(req)
+}
+
+/**
+ * 获取技能使用教程（AI 生成）
+ * @param name 技能名称
+ * @param scope 可选，'common' | 'deep'，不传则默认 common
+ */
+export async function fetch_skill_tutorial(name: string, scope?: string): Promise<Response> {
+  const userStore = useUserStore()
+  const token = userStore.getUserToken()
+  const url = new URL(`${location.origin}/sanic/system/skill/tutorial`)
+  const req = new Request(url, {
+    mode: 'cors',
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ name, scope }),
   })
   return fetch(req)
 }
