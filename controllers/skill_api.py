@@ -124,12 +124,14 @@ async def install_from_upload(request: Request):
         file = request.files["file"][0]
         zip_bytes = file.body
         filename = file.name or "skills.zip"
-        scope = request.form.get("scope", "common") if hasattr(request, "form") else "common"
-
+        form_data = request.form or {}
+        scope = form_data.get("scope", "common")
         if scope not in ("common", "deep"):
             scope = "common"
 
         installed = SkillService.install_from_zip(zip_bytes, filename, scope=scope)
+        if not installed:
+            return {"success": False, "message": "zip 包中未找到有效的技能文件（需要包含 SKILL.md）"}
         return installed
     except Exception as e:
         logger.error(f"从 zip 安装技能失败: {e}", exc_info=True)

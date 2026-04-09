@@ -267,21 +267,30 @@ class SkillService:
                 skill_dir = skill_md.parent
                 skill_info = cls._parse_skill_markdown(skill_md)
 
-                # 验证目录名（支持分支后缀）
-                expected_dir_name = skill_info["name"]
+                # 上传的 zip 包顶层目录是随机 temp 目录名，不是技能名
+                # 只做一个 skill 且顶层目录是 temp 随机名时，直接使用
                 actual_dir_name = skill_dir.name
                 stripped_name = actual_dir_name
                 for suffix in ["-main", "-master"]:
                     if stripped_name.endswith(suffix):
                         stripped_name = stripped_name[:-len(suffix)]
-                if stripped_name != expected_dir_name:
+
+                # 检查是否只有一个 skill，且目录名不匹配（temp 目录情况）
+                all_skill_mds = list(temp_dir.rglob("**/SKILL.md"))
+                is_single_skill = len(all_skill_mds) == 1
+                name_mismatch = stripped_name != skill_info["name"]
+
+                if is_single_skill and name_mismatch:
+                    # 单 skill 的 zip，顶层是随机 temp 目录，直接使用
+                    logger.info(f"检测到单技能 zip（temp 目录模式），技能名: {skill_info['name']}")
+                elif stripped_name != skill_info["name"]:
                     logger.warning(
-                        f"技能目录名 '{actual_dir_name}' 与 SKILL.md 中的 name '{expected_dir_name}' 不一致，跳过"
+                        f"技能目录名 '{actual_dir_name}' 与 SKILL.md 中的 name '{skill_info['name']}' 不一致，跳过"
                     )
                     continue
 
                 skill_info["source_dir"] = str(skill_dir)
-                skill_info["correct_name"] = expected_dir_name
+                skill_info["correct_name"] = skill_info["name"]
                 skills.append(skill_info)
 
             # 安装技能

@@ -22,12 +22,12 @@ from common.llm_util import get_llm
 from common.minio_util import MinioUtils
 from constants.code_enum import DataTypeEnum, IntentEnum
 from services.user_service import add_user_record, decode_jwt_token
-
 logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).parent
 project_root = current_dir.parent.parent  # Aix-DB 项目根目录
 agent_workspace_dir = current_dir / "agent_workspace"
+agent_sessions_dir = agent_workspace_dir / "sessions"
 minio_utils = MinioUtils()
 
 
@@ -192,21 +192,24 @@ class EnhancedCommonAgent:
         self,
         system_prompt: Optional[str] = None,
         mcp_tools: Optional[list] = None,
+        session_workdir: Optional[Path] = None,
     ):
         """创建 deep agent 实例
 
         Args:
             mcp_tools: 预获取的 MCP 工具列表，为 None 时内部获取
+            session_workdir: session 级工作目录，优先于全局 agent_workspace_dir
         """
         if mcp_tools is None:
             mcp_tools = await self._get_mcp_tools()
 
         from services.skill_service import SkillService
 
-        skill_paths = str(current_dir/"skills") #SkillService.get_enabled_skill_paths(selected_skills)
+        skill_paths = str(current_dir / "skills")
 
         model = get_llm(timeout=self.DEFAULT_LLM_TIMEOUT)
-        agent_workspace_dir.mkdir(exist_ok=True)
+        workdir = session_workdir or agent_workspace_dir
+        workdir.mkdir(parents=True, exist_ok=True)
         return create_deep_agent(
             model=model,
             tools=mcp_tools,
@@ -214,10 +217,26 @@ class EnhancedCommonAgent:
             memory=[str(current_dir / "AGENTS.md")],
             skills=[skill_paths],
             backend=LocalShellBackend(
-                root_dir=str(agent_workspace_dir),
+                root_dir=str(workdir),
                 inherit_env=True,
                 timeout=120
             ),
+            # middleware=[
+            #         # 开启上下文总结压缩
+            #         SummarizationMiddleware(
+            #             model=model,
+            #             max_tokens_before_summary=4000,
+            #             messages_to_keep=20,
+            #         ),
+            #         # 通过修剪、总结或清除工具使用来管理对话上下文。
+            #         # 需要定期清理上下文的长对话
+            #         # 从上下文中删除失败的工具尝试
+            #         ContextEditingMiddleware(
+            #             edits=[
+            #                 ClearToolUsesEdit(trigger=10000),  # Clear old tool uses
+            #             ],
+            #         ),
+            #     ],
             checkpointer=self.checkpointer,
         )
 
@@ -507,6 +526,11 @@ class EnhancedCommonAgent:
 
             # 使用 session_id 作为 thread_id
             thread_id = session_id if session_id else "default_thread"
+
+            # session 级工作目录
+            session_workdir = agent_sessions_dir / thread_id
+            session_workdir.mkdir(parents=True, exist_ok=True)
+
             config = {
                 "configurable": {
                     "thread_id": thread_id,
@@ -525,6 +549,7 @@ class EnhancedCommonAgent:
             agent = await self._create_agent(
                 system_prompt=None,
                 mcp_tools=mcp_tools,
+                session_workdir=session_workdir,
             )
 
             # 带超时保护的任务
@@ -579,6 +604,25 @@ class EnhancedCommonAgent:
 
             # 发送结束标记
             if not task_context.get("cancelled"):
+                # 扫描 session 工作目录，收集生成的文件
+                if session_workdir.exists():
+                    generated_files = []
+                    for f in session_workdir.iterdir():
+                        if f.is_file() and not f.name.startswith("."):
+                            # 返回相对于 workspace 的路径，供下载接口使用
+                            rel_path = str(f.relative_to(agent_workspace_dir))
+                            generated_files.append({
+                                "name": f.name,
+                                "path": rel_path,
+                                "size": f.stat().st_size,
+                            })
+                    if generated_files:
+                        file_list_data = {
+                            "data": {"files": generated_files},
+                            "dataType": DataTypeEnum.GENERATED_FILES.value[0],
+                        }
+                        await response.write("data:" + json.dumps(file_list_data, ensure_ascii=False) + "\n\n")
+
                 await response.write(
                     "data:"
                     + json.dumps(
