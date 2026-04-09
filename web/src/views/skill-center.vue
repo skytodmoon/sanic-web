@@ -10,7 +10,6 @@ import {
   install_from_github,
   install_from_zip,
   preview_github_skills,
-  toggle_skill,
   uninstall_skill,
   type SkillInfo,
 } from '@/api/skill'
@@ -156,17 +155,6 @@ async function handleInstallSelected() {
   }
 }
 
-async function handleToggle(skill: SkillInfo) {
-  const res = await toggle_skill(skill.name, !skill.enabled, activeScope.value)
-  const data = await res.json().catch(() => ({}))
-  if (res.ok && data?.code === 200) {
-    message.success(skill.enabled ? '已禁用' : '已启用')
-    await loadInstalledSkills()
-  } else {
-    message.error(data?.msg || data?.message || '操作失败')
-  }
-}
-
 async function handleUninstall(skill: SkillInfo) {
   dialog.warning({
     title: '确认卸载',
@@ -184,20 +172,6 @@ async function handleUninstall(skill: SkillInfo) {
       }
     },
   })
-}
-
-async function handleBatchToggle(enabled: boolean) {
-  const names = selectedForBatch.value
-  if (names.length === 0) {
-    message.warning('请先选择技能')
-    return
-  }
-  for (const name of names) {
-    await toggle_skill(name, enabled, activeScope.value)
-  }
-  message.success(enabled ? `已启用 ${names.length} 个技能` : `已禁用 ${names.length} 个技能`)
-  selectedForBatch.value = []
-  await loadInstalledSkills()
 }
 
 async function handleBatchUninstall() {
@@ -465,14 +439,6 @@ onMounted(() => {
               <n-button
                 v-if="selectedForBatch.length > 0"
                 size="small"
-                type="warning"
-                @click="handleBatchToggle(false)"
-              >
-                禁用 ({{ selectedForBatch.length }})
-              </n-button>
-              <n-button
-                v-if="selectedForBatch.length > 0"
-                size="small"
                 type="error"
                 @click="handleBatchUninstall"
               >
@@ -514,7 +480,6 @@ onMounted(() => {
                       <div class="i-hugeicons:magic-wand-01 text-16"></div>
                     </div>
                     <span class="skill-card-name">{{ skill.name }}</span>
-                    <n-tag v-if="!skill.enabled" size="small" type="warning">已禁用</n-tag>
                   </div>
                   <div class="skill-card-desc">{{ skill.description || '暂无描述' }}</div>
                 </div>
@@ -522,13 +487,6 @@ onMounted(() => {
               <div class="skill-card-actions">
                 <n-button size="small" type="info" @click="handleViewTutorial(skill)">
                   使用教程
-                </n-button>
-                <n-button
-                  size="small"
-                  :type="skill.enabled ? 'warning' : 'success'"
-                  @click="handleToggle(skill)"
-                >
-                  {{ skill.enabled ? '禁用' : '启用' }}
                 </n-button>
                 <n-button size="small" type="error" @click="handleUninstall(skill)">
                   卸载
@@ -543,20 +501,12 @@ onMounted(() => {
                     <div class="i-hugeicons:magic-wand-01 text-16"></div>
                   </div>
                   <span class="skill-card-name">{{ skill.name }}</span>
-                  <n-tag v-if="!skill.enabled" size="small" type="warning">已禁用</n-tag>
                 </div>
                 <div class="skill-card-desc">{{ skill.description || '暂无描述' }}</div>
               </div>
               <div class="skill-card-actions">
                 <n-button size="small" type="info" @click="handleViewTutorial(skill)">
                   使用教程
-                </n-button>
-                <n-button
-                  size="small"
-                  :type="skill.enabled ? 'warning' : 'success'"
-                  @click="handleToggle(skill)"
-                >
-                  {{ skill.enabled ? '禁用' : '启用' }}
                 </n-button>
                 <n-button size="small" type="error" @click="handleUninstall(skill)">
                   卸载

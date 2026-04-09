@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 current_dir = Path(__file__).parent
 project_root = current_dir.parent.parent  # Aix-DB 项目根目录
-agent_workspace_dir = project_root / "agent_workspace"
+agent_workspace_dir = current_dir / "agent_workspace"
 minio_utils = MinioUtils()
 
 
