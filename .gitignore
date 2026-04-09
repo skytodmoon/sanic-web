@@ -10,7 +10,6 @@ tests/
 !tests/
 tests/*
 !tests/test_sql_security.py
-!tests/test_agent_memory_v1.py
 docker/volume/
 docker/dify/volumes/*
 !docker/dify/docker/volumes/myscale/config/users.d/custom_users_config.xml
@@ -82,4 +81,3 @@ agent/common
 !constants/**/*.py
 /tests/
 !/tests/
-!/tests/test_agent_memory_v1.py

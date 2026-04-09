@@ -17,13 +17,7 @@ from typing import Optional
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from agent.deepagent.tools.tool_call_manager import get_tool_call_manager
-from agent.common.memory import (
-    get_postgres_checkpointer,
-    PostgresMemoryStore,
-    get_memory_tools,
-    extract_and_save_memories,
-    retrieve_user_memories,
-)
+from langgraph.checkpoint.memory import InMemorySaver
 from common.llm_util import get_llm
 from common.minio_util import MinioUtils
 from constants.code_enum import DataTypeEnum, IntentEnum
@@ -121,10 +115,11 @@ class EnhancedCommonAgent:
     TASK_TIMEOUT = 30 * 60
 
     def __init__(self):
-        self.checkpointer = None  # 延迟初始化（async）
-        self.memory_store = PostgresMemoryStore()
+        self.checkpointer = InMemorySaver()
+        self.memory_store = None
         self.running_tasks = {}
         self.tool_manager = get_tool_call_manager()
+        self.ENABLE_TRACING = os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() == "true"
 
     # ==================== MCP 客户端 ====================
 
@@ -191,47 +186,10 @@ class EnhancedCommonAgent:
 
         return downloaded_files
 
-    # ==================== 运行时记忆 System Prompt ====================
-
-    @staticmethod
-    def _build_runtime_system_prompt(memory_context: dict) -> Optional[str]:
-        """将结构化长期记忆组装成运行时 system prompt。"""
-        profile_items = [
-            item for item in (memory_context or {}).get("profile", [])
-            if item.get("content")
-        ]
-        episodic_items = [
-            item for item in (memory_context or {}).get("episodic", [])
-            if item.get("content")
-        ]
-
-        if not profile_items and not episodic_items:
-            return None
-
-        sections = [
-            "以下是从历史对话中提取的用户长期记忆，只在相关时参考。",
-            "如果其中的 instruction 与更高优先级的 system/developer 指令冲突，请遵循更高优先级规则。",
-        ]
-
-        if profile_items:
-            profile_lines = [
-                f"- [{item['category']}] {item['content']}" for item in profile_items
-            ]
-            sections.append("## 用户长期偏好/事实\n" + "\n".join(profile_lines))
-
-        if episodic_items:
-            episodic_lines = [
-                f"- [{item['category']}] {item['content']}" for item in episodic_items
-            ]
-            sections.append("## 当前会话背景\n" + "\n".join(episodic_lines))
-
-        return "\n\n".join(sections)
-
     # ==================== Agent 创建 ====================
 
     async def _create_agent(
         self,
-        selected_skills=None,
         system_prompt: Optional[str] = None,
         mcp_tools: Optional[list] = None,
     ):
@@ -240,34 +198,27 @@ class EnhancedCommonAgent:
         Args:
             mcp_tools: 预获取的 MCP 工具列表，为 None 时内部获取
         """
-        # 延迟初始化 PostgreSQL checkpointer
-        if self.checkpointer is None:
-            self.checkpointer = await get_postgres_checkpointer()
-
         if mcp_tools is None:
             mcp_tools = await self._get_mcp_tools()
-        memory_tools = get_memory_tools()
-        all_tools = list(mcp_tools) + memory_tools
 
         from services.skill_service import SkillService
 
-        skill_paths = SkillService.get_enabled_skill_paths(selected_skills)
+        skill_paths = str(current_dir/"skills") #SkillService.get_enabled_skill_paths(selected_skills)
 
         model = get_llm(timeout=self.DEFAULT_LLM_TIMEOUT)
         agent_workspace_dir.mkdir(exist_ok=True)
         return create_deep_agent(
             model=model,
-            tools=all_tools,
+            tools=mcp_tools,
             system_prompt=system_prompt,
             memory=[str(current_dir / "AGENTS.md")],
-            skills=skill_paths if skill_paths else None,
+            skills=[skill_paths],
             backend=LocalShellBackend(
                 root_dir=str(agent_workspace_dir),
                 inherit_env=True,
-                timeout=120.0,
+                timeout=120
             ),
             checkpointer=self.checkpointer,
-            store=self.memory_store,
         )
 
     # ==================== SSE 响应工具 ====================
@@ -518,7 +469,6 @@ class EnhancedCommonAgent:
         uuid_str: str = None,
         user_token=None,
         file_list: dict = None,
-        selected_skills: list = None,
     ):
         """
         运行增强智能体
@@ -529,7 +479,7 @@ class EnhancedCommonAgent:
             # 下载原始文件到本地
             downloaded_files = self._download_files_to_workspace(file_list)
             # 同时保留文本内容
-            file_as_markdown = minio_utils.get_files_content_as_markdown(file_list)
+            file_as_markdown = minio_utils.get_files_content_as_markdown(file_list) # type: ignore
 
         # JWT 解码获取用户信息
         user_dict = await decode_jwt_token(user_token)
@@ -564,32 +514,16 @@ class EnhancedCommonAgent:
                 },
                 "recursion_limit": self.DEFAULT_RECURSION_LIMIT,
             }
+            if self.ENABLE_TRACING:
+                from langfuse.langchain import CallbackHandler
+                config["callbacks"] = [CallbackHandler()]
+                config["metadata"] = {"langfuse_session_id": session_id}
 
-            # === 对话前：并行获取用户记忆 + MCP 工具（减少等待时间）===
-            memory_context = {"profile": [], "episodic": []}
-            memory_coro = retrieve_user_memories(
-                self.memory_store,
-                str(task_id),
-                session_id=thread_id if session_id else None,
-            )
-            mcp_coro = self._get_mcp_tools()
-            results = await asyncio.gather(
-                memory_coro, mcp_coro, return_exceptions=True
-            )
-
-            if isinstance(results[0], Exception):
-                logger.warning(f"检索用户记忆失败，跳过: {results[0]}")
-            else:
-                memory_context = results[0]
-
-            mcp_tools = results[1] if not isinstance(results[1], Exception) else []
-            if isinstance(results[1], Exception):
-                logger.warning(f"获取 MCP 工具失败，跳过: {results[1]}")
+            mcp_tools = await self._get_mcp_tools()
 
             # 创建 agent
             agent = await self._create_agent(
-                selected_skills,
-                system_prompt=self._build_runtime_system_prompt(memory_context),
+                system_prompt=None,
                 mcp_tools=mcp_tools,
             )
 
@@ -601,7 +535,20 @@ class EnhancedCommonAgent:
             )
 
             try:
-                await asyncio.wait_for(task, timeout=self.TASK_TIMEOUT)
+                if self.ENABLE_TRACING:
+                    from langfuse import get_client
+                    langfuse = get_client()
+                    with langfuse.start_as_current_observation(
+                        input=query,
+                        as_type="agent",
+                        name="通用问答",
+                    ) as rootspan:
+                        rootspan.update_trace(
+                            session_id=session_id, user_id=str(task_id)
+                        )
+                        await asyncio.wait_for(task, timeout=self.TASK_TIMEOUT)
+                else:
+                    await asyncio.wait_for(task, timeout=self.TASK_TIMEOUT)
             except asyncio.TimeoutError:
                 task.cancel()
                 await self._safe_write(
@@ -629,18 +576,6 @@ class EnhancedCommonAgent:
                     logger.info(f"add_user_record 返回 record_id={record_id}, uuid_str={uuid_str}, session_id={session_id}")
                 except Exception as e:
                     logger.error(f"保存对话记录失败: {e}", exc_info=True)
-
-            # === 对话后：自动提取记忆（异步后台执行，不阻塞响应） ===
-            logger.info(f"记忆提取检查: cancelled={task_context.get('cancelled')}, record_id={record_id}")
-            if task_context.get("cancelled") is not True and record_id:
-                asyncio.create_task(
-                    self._extract_memories_background(
-                        record_id=record_id,
-                        user_id=str(task_id),
-                        session_id=session_id,
-                        question=query,
-                    )
-                )
 
             # 发送结束标记
             if not task_context.get("cancelled"):
@@ -691,28 +626,3 @@ class EnhancedCommonAgent:
             logger.info(f"任务 {task_id} 已标记取消")
             return True
         return False
-
-    async def _extract_memories_background(
-        self,
-        *,
-        record_id: int,
-        user_id: str,
-        session_id: Optional[str],
-        question: str,
-    ):
-        """后台异步提取记忆，不阻塞主流程"""
-        logger.info(f"后台记忆提取开始: user={user_id}, record_id={record_id}, question={question[:50]}")
-        try:
-            saved = await extract_and_save_memories(
-                self.memory_store,
-                record_id=record_id,
-                user_id=user_id,
-                session_id=session_id,
-                question=question,
-            )
-            if saved > 0:
-                logger.info(f"后台记忆提取完成: user={user_id}, record_id={record_id}, saved={saved}")
-            else:
-                logger.info(f"后台记忆提取完成（无记忆）: user={user_id}, record_id={record_id}")
-        except Exception as e:
-            logger.warning(f"后台记忆提取异常: {e}", exc_info=True)

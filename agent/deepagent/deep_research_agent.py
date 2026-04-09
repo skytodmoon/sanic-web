@@ -142,6 +142,9 @@ class DeepAgent:
         )
         self.LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", self.DEFAULT_LLM_TIMEOUT))
 
+        # 链路追踪配置
+        self.ENABLE_TRACING = os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() == "true"
+
     # ==================== 技能加载 ====================
 
     def _load_available_skills(self):
@@ -228,7 +231,7 @@ class DeepAgent:
         """格式化工具调用信息"""
         if name == "sql_db_query":
             query = args.get("query", "")
-            return f"⚡ **Executing SQL**\n```sql\n{query.strip()}\n```\n\n"
+            return f"⚡ **Executing SQL**\n``sql\n{query.strip()}\n```\n\n"
         elif name == "sql_db_schema":
             table_names = args.get("table_names", "")
             if isinstance(table_names, list):
@@ -376,7 +379,7 @@ class DeepAgent:
                 ]
 
         # 获取启用的 deep skill 路径
-        skill_paths = SkillService.get_enabled_skill_paths(scope="deep")
+        skill_paths = [os.path.join(current_dir, "skills")]#SkillService.get_enabled_skill_paths(scope="deep")
         agent = create_deep_agent(
             model=model,
             memory=[os.path.join(current_dir, "AGENTS.md")],
@@ -440,18 +443,48 @@ class DeepAgent:
                 "recursion_limit": self.RECURSION_LIMIT,
             }
 
+            # 如果启用追踪，添加 Langfuse Callback
+            if self.ENABLE_TRACING:
+                from langfuse.langchain import CallbackHandler
+                config["callbacks"] = [CallbackHandler()]
+                config["metadata"] = {"langfuse_session_id": session_id}
+
             try:
-                connection_closed = await asyncio.wait_for(
-                    self._stream_response(
-                        agent,
-                        config,
-                        query,
-                        response,
-                        effective_session_id,
-                        answer_collector,
-                    ),
-                    timeout=self.TASK_TIMEOUT,
-                )
+                # 根据是否启用追踪，选择执行方式
+                if self.ENABLE_TRACING:
+                    from langfuse import get_client
+                    langfuse = get_client()
+                    with langfuse.start_as_current_observation(
+                        input=query,
+                        as_type="agent",
+                        name="Deep Research Agent (SQL)",
+                    ) as rootspan:
+                        rootspan.update_trace(
+                            session_id=session_id, user_id=str(task_id)
+                        )
+                        connection_closed = await asyncio.wait_for(
+                            self._stream_response(
+                                agent,
+                                config,
+                                query,
+                                response,
+                                effective_session_id,
+                                answer_collector,
+                            ),
+                            timeout=self.TASK_TIMEOUT,
+                        )
+                else:
+                    connection_closed = await asyncio.wait_for(
+                        self._stream_response(
+                            agent,
+                            config,
+                            query,
+                            response,
+                            effective_session_id,
+                            answer_collector,
+                        ),
+                        timeout=self.TASK_TIMEOUT,
+                    )
             except asyncio.TimeoutError:
                 elapsed = time.time() - start_time
                 logger.error(

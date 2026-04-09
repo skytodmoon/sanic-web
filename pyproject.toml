@@ -73,9 +73,10 @@ dependencies = [
     "elasticsearch==8.17.1",
     "redshift-connector==2.1.4",
     "clickhouse-sqlalchemy==0.3.2",
-    "deepagents>=0.3.12",
+    "deepagents==0.5.1",
     "langgraph-checkpoint-postgres>=3.0.5",
     "psycopg[binary,pool]>=3.3.3",
+    "html2text>=2025.4.15",
 ]
 
 [[tool.uv.index]]
