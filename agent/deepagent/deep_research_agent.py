@@ -16,6 +16,7 @@ import os
 import time
 import traceback
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -380,9 +381,14 @@ class DeepAgent:
 
         # 获取启用的 deep skill 路径
         skill_paths = [os.path.join(current_dir, "skills")]#SkillService.get_enabled_skill_paths(scope="deep")
+
+        # 注入当前日期，让 LLM 知道当前时间
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        memory = [os.path.join(current_dir, "AGENTS.md"), f"当前日期: {current_date}"]
+
         agent = create_deep_agent(
             model=model,
-            memory=[os.path.join(current_dir, "AGENTS.md")],
+            memory=memory,
             skills=skill_paths if skill_paths else None,
             tools=sql_tools,
             backend=FilesystemBackend(root_dir=current_dir),

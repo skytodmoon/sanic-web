@@ -10,6 +10,7 @@ import logging
 import os
 import traceback
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -210,11 +211,16 @@ class EnhancedCommonAgent:
         model = get_llm(timeout=self.DEFAULT_LLM_TIMEOUT)
         workdir = session_workdir or agent_workspace_dir
         workdir.mkdir(parents=True, exist_ok=True)
+
+        # 注入当前日期，让 LLM 知道当前时间
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        memory = [str(current_dir / "AGENTS.md"), f"当前日期: {current_date}"]
+
         return create_deep_agent(
             model=model,
             tools=mcp_tools,
             system_prompt=system_prompt,
-            memory=[str(current_dir / "AGENTS.md")],
+            memory=memory,
             skills=[skill_paths],
             backend=LocalShellBackend(
                 root_dir=str(workdir),
