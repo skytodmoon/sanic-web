@@ -12,11 +12,12 @@ pool = get_db_pool()
 DEFAULT_LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30 * 60))
 
 
-def get_llm(temperature=0.75, timeout=None):
+def get_llm(temperature=0.75, timeout=None, max_tokens=None):
     """
     获取LLM模型
     :param temperature: 温度参数
-    :param timeout: 超时时间（秒），默认使用环境变量 LLM_TIMEOUT 或 18分钟
+    :param timeout: 超时时间（秒），默认使用环境变量 LLM_TIMEOUT 或 30分钟
+    :param max_tokens: 单次输出 token 上限，默认 None（使用模型默认值）
     :return: LLM模型实例
     """
     with pool.get_session() as session:
@@ -74,13 +75,16 @@ def get_llm(temperature=0.75, timeout=None):
                 )
                 raise
 
-            return ChatOpenAI(
+            kwargs = dict(
                 model=model_name,
                 temperature=temperature,
                 base_url=model_base_url,
                 api_key=model_api_key or "empty",  # Ensure not None
                 timeout=timeout,  # 设置超时时间（秒）
             )
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            return ChatOpenAI(**kwargs)
 
         def _get_ollama():
             """

@@ -96,7 +96,7 @@ SUB_AGENT_LABELS = {
 # ==================== <details> 标签模板 ====================
 
 THINKING_SECTION_OPEN = (
-    '<details open style="margin:8px 0;padding:8px 12px;background:#f8f9fa;'
+    '<details style="margin:8px 0;padding:8px 12px;background:#f8f9fa;'
     "border-left:3px solid #4a90d9;border-radius:4px;font-size:14px;color:#555"
     '">\n'
     '<summary style="cursor:pointer;font-weight:600;color:#333">'
@@ -104,7 +104,7 @@ THINKING_SECTION_OPEN = (
 )
 
 SUBAGENT_SECTION_OPEN_TPL = (
-    '<details open style="margin:8px 0;padding:8px 12px;background:#fff8e6;'
+    '<details style="margin:8px 0;padding:8px 12px;background:#fff8e6;'
     "border-left:3px solid #f0a020;border-radius:4px;font-size:14px;color:#555"
     '">\n'
     '<summary style="cursor:pointer;font-weight:600;color:#333">'
@@ -126,6 +126,11 @@ class DeepAgent:
     # LLM 单次请求超时（秒）- 公网大模型高峰期或生成长报告时需要较长时间
     DEFAULT_LLM_TIMEOUT = 15 * 60
 
+    # 单次 LLM 输出 token 上限 - 报告生成需要大量 token
+    # 复杂 HTML 报告（含 ECharts、CSS、数据表格）可能需要数万 token
+    # DeepSeek 等模型默认上限较低(4096-8192)，需显式设置更高值
+    DEFAULT_LLM_MAX_TOKENS = 65536
+
     # SSE 保活间隔（秒）：防止代理/浏览器约 2 分钟无数据断开
     STREAM_KEEPALIVE_INTERVAL = 25
 
@@ -144,6 +149,9 @@ class DeepAgent:
             os.getenv("RECURSION_LIMIT", self.DEFAULT_RECURSION_LIMIT)
         )
         self.LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", self.DEFAULT_LLM_TIMEOUT))
+        self.LLM_MAX_TOKENS = int(
+            os.getenv("LLM_MAX_TOKENS", self.DEFAULT_LLM_MAX_TOKENS)
+        )
 
         # 链路追踪配置
         self.ENABLE_TRACING = os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() == "true"
@@ -231,34 +239,32 @@ class DeepAgent:
 
     @staticmethod
     def _format_tool_call(name: str, args: dict) -> Optional[str]:
-        """格式化工具调用信息"""
+        """格式化工具调用信息（紧凑格式）"""
         if name == "sql_db_query":
             query = args.get("query", "")
-            return f"⚡ **Executing SQL**\n``sql\n{query.strip()}\n```\n\n"
+            return f"\n```sql\n{query.strip()}\n```\n"
         elif name == "sql_db_schema":
             table_names = args.get("table_names", "")
             if isinstance(table_names, list):
                 table_names = ", ".join(table_names)
-            if table_names:
-                return f"🔍 **Checking Schema:** `{table_names}`\n\n"
-            return "🔍 **Checking Schema...**\n\n"
+            return f"- 查看表结构: `{table_names}`\n" if table_names else "- 查看表结构\n"
         elif name == "sql_db_list_tables":
-            return "📋 **Listing Tables...**\n\n"
+            return "- 获取表列表\n"
         elif name == "sql_db_query_checker":
-            return "✅ **Validating Query...**\n\n"
+            return "- 校验 SQL\n"
         elif name == "sql_db_table_relationship":
             table_names = args.get("table_names", "")
-            return f"🔗 **Checking Relationships:** `{table_names}`\n\n"
+            return f"- 查看表关系: `{table_names}`\n"
         return None
 
     @staticmethod
     def _format_tool_result(name: str, content: str) -> Optional[str]:
-        """格式化工具执行结果"""
+        """格式化工具执行结果（紧凑格式）"""
         if "sql" in name.lower():
             if "error" not in content.lower():
-                return "✓ Query executed successfully\n\n"
+                return "  ✓ 成功\n"
             else:
-                return f"✗ **Query failed:** {content[:300].strip()}\n\n"
+                return f"  ✗ 失败: {content[:200].strip()}\n"
         return None
 
     @staticmethod
@@ -346,7 +352,7 @@ class DeepAgent:
 
             db_enum = DB.get_db(datasource.type, default_if_none=True)
 
-            model = get_llm(timeout=self.LLM_TIMEOUT)
+            model = get_llm(timeout=self.LLM_TIMEOUT, max_tokens=self.LLM_MAX_TOKENS)
             logger.info(
                 f"LLM 模型已创建，超时: {self.LLM_TIMEOUT}秒，"
                 f"递归限制: {self.RECURSION_LIMIT}"
@@ -733,16 +739,8 @@ class DeepAgent:
 
                 # ---- 4. updates 模式：工具调用与结果 ----
                 elif mode == "updates":
-                    # 工具调用开始：从 PLANNING 切换到 EXECUTION
-                    if tracker.current_phase == Phase.PLANNING:
-                        if not await self._close_sections(response, tracker):
-                            connection_closed = True
-                            break
-                        tracker.current_phase = Phase.EXECUTION
-                        tracker.has_tool_called = True
-                        tracker.has_sent_content = True
-
-                    # 标记已发生工具调用
+                    # 标记已发生工具调用（不提前关闭 <details>，让工具调用保持在当前区域内）
+                    # 阶段切换交由 messages 模式中的 _detect_phase 自然触发
                     if not tracker.has_tool_called:
                         tracker.has_tool_called = True
 
@@ -805,6 +803,30 @@ class DeepAgent:
             if not connection_closed:
                 try:
                     await self._close_sections(response, tracker)
+                except Exception:
+                    pass
+
+            # 检测 HTML 报告是否被截断
+            if not connection_closed and answer_collector:
+                try:
+                    full_output = "".join(answer_collector)
+                    if "REPORT_HTML_START" in full_output and "REPORT_HTML_END" not in full_output:
+                        logger.warning(
+                            f"HTML 报告被截断 - 会话: {session_id}, "
+                            f"输出长度: {len(full_output)}"
+                        )
+                        truncation_msg = (
+                            "\n\n> ⚠️ **报告生成不完整**: HTML 报告在生成过程中被截断。"
+                            "可能原因：模型输出 token 达到上限。请尝试简化报告需求后重试。\n"
+                            "<!-- REPORT_HTML_END -->\n"
+                        )
+                        await self._safe_write(
+                            response,
+                            truncation_msg,
+                            "warning",
+                            DataTypeEnum.ANSWER.value[0],
+                        )
+                        answer_collector.append(truncation_msg)
                 except Exception:
                     pass
 
@@ -878,8 +900,6 @@ class DeepAgent:
                         args = tc.get("args", {})
                         tool_msg = self._format_tool_call(name, args)
                         if tool_msg:
-                            if not await self._safe_write(response, "\n\n"):
-                                return False
                             if not await self._safe_write(response, tool_msg, "info"):
                                 return False
                             answer_collector.append(tool_msg)
