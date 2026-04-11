@@ -1,4 +1,4 @@
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
 
 // 确保引入需要的语言包
 import javascript from 'highlight.js/lib/languages/javascript'

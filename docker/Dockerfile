@@ -49,6 +49,12 @@ COPY serv.py ./
 # 复制文档目录
 COPY docs/ docs/
 
+# 确保技能安装目录存在
+RUN mkdir -p /aix-db/agent/common/skills
+
+# 安装幻灯片生成所需的 Node.js 全局包
+RUN npm install -g pptxgenjs --no-fund --no-audit
+
 # 清理源代码中的缓存文件（不清理 .venv 目录）
 RUN find . -path "./.venv" -prune -o -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     find . -path "./.venv" -prune -o -type f -name "*.pyc" -delete 2>/dev/null || true && \

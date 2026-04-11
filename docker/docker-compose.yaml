@@ -17,6 +17,8 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
+      # 前端 PageAgent 开关（运行时注入）
+      VITE_ENABLE_PAGE_AGENT: ${VITE_ENABLE_PAGE_AGENT:-}
 
     ports:
       # 前端（通过 nginx）
@@ -41,6 +43,8 @@ services:
       - ./volume/logs/aix-db:/var/log/aix-db
       - ./volume/logs/minio:/var/log/minio
       - ./volume/logs/postgresql:/var/log/postgresql
+      # 技能目录持久化
+      - ./volume/skills:/aix-db/agent/common/skills
 
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -3,7 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Agent workspace (generated files)
+agent_workspace/
+
 tests/
+!tests/
+tests/*
+!tests/test_sql_security.py
 docker/volume/
 docker/dify/volumes/*
 !docker/dify/docker/volumes/myscale/config/users.d/custom_users_config.xml
@@ -33,9 +39,9 @@ docker/.env
 !.vscode/extensions.json
 .cursor/
 
-# claude code 配置信息
-CLAUDE.md
+# claude code 配置信ß息
 .claude/
+.agents/
 .spec-workflow/
 test/
 examples/
@@ -61,6 +67,10 @@ examples/
 !services/**/*.py
 !agent/
 !agent/**/*.py
+
+# 智能问答已安装技能（运行时管理，不入版本库）
+agent/common
+!agent/common/skills/.gitkeep
 !common/
 !common/**/*.py
 !model/
@@ -69,3 +79,5 @@ examples/
 !config/**/*.py
 !constants/
 !constants/**/*.py
+/tests/
+!/tests/

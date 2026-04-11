@@ -426,6 +426,12 @@ const showText = () => {
           pendingDelimiter = ''
         }
 
+        // 流结束时仍在捕获 HTML — 报告被截断，强制显示已有内容
+        if (isCapturingHtml.value && !htmlReportReady.value) {
+          htmlReportReady.value = true
+          isCapturingHtml.value = false
+        }
+
         emit('update:reader', null)
         emit('completed')
         emit('chartready')

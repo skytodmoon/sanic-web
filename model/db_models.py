@@ -4,12 +4,14 @@ from typing import List, Optional, Union
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Float,
     Integer,
     String,
     TIMESTAMP,
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import VECTOR
 

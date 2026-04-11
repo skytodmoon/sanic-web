@@ -29,6 +29,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.sql.expression import text
 
 from agent.text2sql.state.agent_state import AgentState, ExecutionResult
+from common.sql_security import validate_read_only_sql
 from model.db_connection_pool import get_db_pool
 from model.db_models import TAiModel, TDsPermission, TDsRules
 from model.datasource_models import DatasourceTable, DatasourceField
@@ -1278,6 +1279,19 @@ class DatabaseService:
             error_msg = "SQL 为空，无法执行"
             logger.warning(error_msg)
             state["execution_result"] = ExecutionResult(success=False, error=error_msg)
+            return state
+
+        is_allowed, security_error = validate_read_only_sql(
+            sql_to_execute,
+            dialect=self._datasource_type,
+        )
+        if not is_allowed:
+            sql_preview = sql_to_execute.replace("\n", " ")[:200]
+            logger.warning("SQL 安全校验失败: %s | sql=%s", security_error, sql_preview)
+            state["execution_result"] = ExecutionResult(
+                success=False,
+                error=security_error,
+            )
             return state
 
         logger.info("▶️ 执行 SQL 语句")

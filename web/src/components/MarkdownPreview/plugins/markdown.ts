@@ -1,13 +1,41 @@
 import MarkdownIt from 'markdown-it'
-import markdownItHighlight from 'markdown-it-highlightjs'
 import hljs from './highlight'
 import { preWrapperPlugin } from './preWrapper'
 
+function escapeHtml(source: string) {
+  return source
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('\'', '&#39;')
+}
+
+function renderHighlightedCode(code: string, language: string) {
+  const normalizedLanguage = language.trim().toLowerCase()
+
+  try {
+    if (normalizedLanguage && hljs.getLanguage(normalizedLanguage)) {
+      const highlighted = hljs.highlight(code, {
+        language: normalizedLanguage,
+        ignoreIllegals: true,
+      }).value
+
+      return `<pre class="hljs"><code class="language-${normalizedLanguage}">${highlighted}</code></pre>`
+    }
+
+    const highlighted = hljs.highlightAuto(code).value
+    return `<pre class="hljs"><code>${highlighted}</code></pre>`
+  } catch {
+    return `<pre class="hljs"><code>${escapeHtml(code)}</code></pre>`
+  }
+}
 
 const md = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true,
+  highlight: (code, language) => renderHighlightedCode(code, language || ''),
 })
 
 
@@ -18,14 +46,8 @@ md.renderer.rules.image = function (tokens, idx, options, env, self) {
   return self.renderToken(tokens, idx, options)
 }
 
-// 确保正确使用 hljs 实例
-md.use(markdownItHighlight, {
-  hljs: hljs,
-  auto: true,
-  code: true
-}).use(preWrapperPlugin, {
+md.use(preWrapperPlugin, {
   hasSingleTheme: true,
 })
-
 
 export default md
