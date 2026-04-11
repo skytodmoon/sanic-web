@@ -239,6 +239,8 @@ docker run -d \
   -e LANGFUSE_SECRET_KEY= \
   -e LANGFUSE_PUBLIC_KEY= \
   -e LANGFUSE_BASE_URL= \
+  -e VITE_ENABLE_PAGE_AGENT=false \
+  -e LLM_MAX_TOKENS=65536 \
   -p 18080:80 \
   -p 18088:8088 \
   -p 15432:5432 \
@@ -252,7 +254,7 @@ docker run -d \
   -v ./volume/logs/minio:/var/log/minio \
   -v ./volume/logs/postgresql:/var/log/postgresql \
   --add-host host.docker.internal:host-gateway \
-  crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.3
+  crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.4
 ```
 
 ### 使用 Docker Compose
@@ -260,7 +262,7 @@ docker run -d \
 ```bash
 git clone https://github.com/apconw/Aix-DB.git
 cd Aix-DB/docker
-cp .env.template .env  # 复制环境变量模板，按需修改
+cp .env.template .env  # 复制环境变量模板，按需修改（推荐开启 VITE_ENABLE_PAGE_AGENT=true）
 docker-compose up -d
 ```
 
