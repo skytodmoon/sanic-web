@@ -470,10 +470,9 @@ onMounted(() => {
             <!-- common tab: 带复选框的卡片 -->
             <template v-if="activeScope === 'common'">
               <div class="skill-card-left">
-                <n-checkbox
-                  :value="skill.name"
-                  v-model:checked="selectedForBatch"
-                />
+                <n-checkbox-group v-model:value="selectedForBatch">
+                  <n-checkbox :value="skill.name" />
+                </n-checkbox-group>
                 <div class="skill-card-info" @click="handleViewSkill(skill)">
                   <div class="skill-card-header">
                     <div class="skill-card-icon">
