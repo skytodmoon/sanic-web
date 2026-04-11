@@ -3,6 +3,7 @@
 """
 
 import logging
+import re
 import shutil
 import subprocess
 import sys
@@ -66,7 +67,27 @@ class SkillService:
                 if len(parts) >= 3:
                     front_matter = parts[1].strip()
                     # 用 yaml.safe_load 正确解析多行 description (">" 折叠语法)
-                    meta = yaml.safe_load(front_matter)
+                    try:
+                        meta = yaml.safe_load(front_matter)
+                    except yaml.YAMLError:
+                        # YAML 解析失败时（如 description 包含未转义的冒号），
+                        # 使用正则表达式提取 name 和 description
+                        meta = None
+                        name_match = re.search(
+                            r"^name:\s*(.+?)\s*$", front_matter, re.MULTILINE
+                        )
+                        desc_match = re.search(
+                            r"^description:\s*(.+?)\s*$", front_matter, re.MULTILINE
+                        )
+                        if name_match or desc_match:
+                            meta = {
+                                "name": (
+                                    name_match.group(1).strip() if name_match else None
+                                ),
+                                "description": (
+                                    desc_match.group(1).strip() if desc_match else None
+                                ),
+                            }
                     if isinstance(meta, dict):
                         return {
                             "name": meta.get("name") or file_path.parent.name,
@@ -78,7 +99,9 @@ class SkillService:
         return {"name": file_path.parent.name, "description": ""}
 
     @classmethod
-    async def install_from_github(cls, repo: str, skill_names: list[str] | None = None, scope: str = "common") -> list[dict]:
+    async def install_from_github(
+        cls, repo: str, skill_names: list[str] | None = None, scope: str = "common"
+    ) -> list[dict]:
         """从 GitHub 仓库安装技能"""
         if scope not in ("common", "deep"):
             scope = "common"
@@ -89,7 +112,9 @@ class SkillService:
 
         for branch in branches:
             try:
-                downloaded_skills, temp_dir = await cls._download_github_skills(repo, branch, skill_names)
+                downloaded_skills, temp_dir = await cls._download_github_skills(
+                    repo, branch, skill_names
+                )
                 break
             except Exception as e:
                 logger.warning(f"从 {repo} ({branch} 分支) 下载技能失败: {e}")
@@ -115,7 +140,9 @@ class SkillService:
         return installed_skills
 
     @classmethod
-    async def _download_github_skills(cls, repo: str, branch: str, skill_names: list[str] | None = None) -> tuple[list[dict], Path]:
+    async def _download_github_skills(
+        cls, repo: str, branch: str, skill_names: list[str] | None = None
+    ) -> tuple[list[dict], Path]:
         """从 GitHub 下载技能，返回 (skills列表, 临时目录)"""
         # 清理 repo 格式
         repo = repo.strip("/")
@@ -130,12 +157,16 @@ class SkillService:
         async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
             response = await client.get(zip_url)
             response.raise_for_status()
-            skills, temp_dir = cls._extract_skills_from_zip(response.content, skill_names)
+            skills, temp_dir = cls._extract_skills_from_zip(
+                response.content, skill_names
+            )
 
         return skills, temp_dir
 
     @classmethod
-    def _extract_skills_from_zip(cls, zip_bytes: bytes, skill_names: list[str] | None = None) -> tuple[list[dict], Path]:
+    def _extract_skills_from_zip(
+        cls, zip_bytes: bytes, skill_names: list[str] | None = None
+    ) -> tuple[list[dict], Path]:
         """从 zip 内容中提取技能信息，返回 (skills列表, 临时目录路径)"""
         temp_dir = Path(tempfile.mkdtemp())
 
@@ -164,7 +195,7 @@ class SkillService:
             stripped_name = actual_dir_name
             for suffix in ["-main", "-master"]:
                 if stripped_name.endswith(suffix):
-                    stripped_name = stripped_name[:-len(suffix)]
+                    stripped_name = stripped_name[: -len(suffix)]
             if stripped_name != expected_dir_name:
                 logger.warning(
                     f"技能目录名 '{actual_dir_name}' (stripped: '{stripped_name}') "
@@ -199,7 +230,11 @@ class SkillService:
             )
 
             # 确定 pip 的路径（跨平台兼容）
-            pip_path = venv_dir / "bin" / "pip" if venv_dir.joinpath("bin").exists() else venv_dir / "Scripts" / "pip.exe"
+            pip_path = (
+                venv_dir / "bin" / "pip"
+                if venv_dir.joinpath("bin").exists()
+                else venv_dir / "Scripts" / "pip.exe"
+            )
 
             # 安装依赖
             subprocess.run(
@@ -247,7 +282,9 @@ class SkillService:
         return True
 
     @classmethod
-    def install_from_zip(cls, zip_bytes: bytes, filename: str, scope: str = "common") -> list[dict]:
+    def install_from_zip(
+        cls, zip_bytes: bytes, filename: str, scope: str = "common"
+    ) -> list[dict]:
         """从 zip 安装"""
         if scope not in ("common", "deep"):
             scope = "common"
@@ -273,7 +310,7 @@ class SkillService:
                 stripped_name = actual_dir_name
                 for suffix in ["-main", "-master"]:
                     if stripped_name.endswith(suffix):
-                        stripped_name = stripped_name[:-len(suffix)]
+                        stripped_name = stripped_name[: -len(suffix)]
 
                 # 检查是否只有一个 skill，且目录名不匹配（temp 目录情况）
                 all_skill_mds = list(temp_dir.rglob("**/SKILL.md"))
@@ -282,7 +319,9 @@ class SkillService:
 
                 if is_single_skill and name_mismatch:
                     # 单 skill 的 zip，顶层是随机 temp 目录，直接使用
-                    logger.info(f"检测到单技能 zip（temp 目录模式），技能名: {skill_info['name']}")
+                    logger.info(
+                        f"检测到单技能 zip（temp 目录模式），技能名: {skill_info['name']}"
+                    )
                 elif stripped_name != skill_info["name"]:
                     logger.warning(
                         f"技能目录名 '{actual_dir_name}' 与 SKILL.md 中的 name '{skill_info['name']}' 不一致，跳过"
@@ -330,7 +369,9 @@ class SkillService:
             return False
 
     @classmethod
-    def toggle_skill(cls, skill_name: str, enabled: bool, scope: str = "common") -> bool:
+    def toggle_skill(
+        cls, skill_name: str, enabled: bool, scope: str = "common"
+    ) -> bool:
         """启用/禁用技能"""
         skills_dir = cls.get_skills_dir(scope)
         skill_dir = skills_dir / skill_name
@@ -356,7 +397,9 @@ class SkillService:
             return False
 
     @classmethod
-    def get_enabled_skill_paths(cls, selected_skills: list[str] | None = None, scope: str = "common") -> list[str]:
+    def get_enabled_skill_paths(
+        cls, selected_skills: list[str] | None = None, scope: str = "common"
+    ) -> list[str]:
         """获取生效的技能路径"""
         if selected_skills is not None:
             # 如果指定了技能列表，直接返回对应路径（忽略 .disabled）

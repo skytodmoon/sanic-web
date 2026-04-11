@@ -325,6 +325,7 @@
     "useAppStore": true,
     "useAppStoreWithOut": true,
     "usePageAgent": true,
-    "pageAgentInstructions": true
+    "pageAgentInstructions": true,
+    "useSlashCommand": true
   }
 }

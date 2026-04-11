@@ -12,6 +12,10 @@ import TableModal from '@/views/datasource/table-modal.vue'
 import FileListItem from '@/views/file/file-list-item.vue'
 
 import FileUploadManager from '@/views/file/file-upload-manager.vue'
+import SkillCommandPopup from '@/components/SkillCommandPopup.vue'
+import AgentInputRequest from '@/components/AgentInputRequest.vue'
+import { useSlashCommand } from '@/hooks/useSlashCommand'
+import { splitStream } from '@/components/MarkdownPreview/transform'
 import DefaultPage from './default-page.vue'
 import SuggestedView from './suggested-page.vue'
 
@@ -248,6 +252,12 @@ const stylizingLoading = ref(false)
 // 输入字符串
 const inputTextString = ref('')
 const refInputTextString = ref<InputInst | null>()
+
+// 默认选中的对话类型
+const qa_type = ref('COMMON_QA')
+
+// 斜杠命令 - 技能选择
+const slashCmd = useSlashCommand(refInputTextString, inputTextString, computed(() => qa_type.value === 'COMMON_QA'))
 
 // 输出字符串 Reader 流（风格化的）
 const outputTextReader = ref<ReadableStreamDefaultReader | null>()
@@ -559,6 +569,129 @@ const onStepProgress = (visibleIndex: number, progress: any) => {
   }
 }
 
+// ==================== Agent 交互式提问 ====================
+
+// 存储每个对话项的 agent 提问信息 { [originalIndex]: { question, threadId, answered, loading } }
+const agentInputRequests = ref<Record<number, {
+  question: string
+  threadId: string
+  answered: boolean
+  loading: boolean
+}>>({})
+
+// 获取对话项对应的 agent 提问信息
+const getAgentInputRequest = (item: any) => {
+  const originalIndex = conversationItems.value.findIndex(
+    (ci) => ci.uuid === item.uuid && ci.role === 'assistant',
+  )
+  return originalIndex >= 0 ? agentInputRequests.value[originalIndex] : undefined
+}
+
+// 处理 Agent 用户输入请求
+const onUserInputRequired = (visibleIndex: number, data: any) => {
+  const item = visibleConversationItems.value[visibleIndex]
+  if (!item) return
+  const originalIndex = conversationItems.value.findIndex((ci) => ci.uuid === item.uuid && ci.role === 'assistant')
+  if (originalIndex < 0) return
+
+  agentInputRequests.value = {
+    ...agentInputRequests.value,
+    [originalIndex]: {
+      question: data.question,
+      threadId: data.threadId,
+      answered: false,
+      loading: false,
+    },
+  }
+
+  // 停止 loading 动画
+  stylizingLoading.value = false
+  contentLoadingStates.value[visibleIndex] = false
+
+  nextTick(() => scrollToBottom())
+}
+
+// 处理用户提交回答
+const onAgentInputSubmit = async (originalIndex: number, payload: { threadId: string, userInput: string }) => {
+  const request = agentInputRequests.value[originalIndex]
+  if (!request) return
+
+  // 标记为加载中
+  request.loading = true
+
+  // 调用 resume API
+  const res = await GlobalAPI.resumeChat(payload.threadId, payload.userInput)
+
+  // 标记为已回答
+  request.answered = true
+  request.loading = false
+
+  if (res.status !== 200) {
+    message.error('恢复对话失败')
+    return
+  }
+
+  // 处理新的 SSE 流 - 追加到同一对话
+  stylizingLoading.value = true
+  const reader = res.body
+    ?.pipeThrough(new TextDecoderStream())
+    .pipeThrough(splitStream('\n'))
+    .pipeThrough(
+      new TransformStream({
+        transform: (chunk: string, controller: TransformStreamDefaultController) => {
+          try {
+            const trimmed = chunk.trim()
+            if (!trimmed.startsWith('data:')) return
+            const chunkData = trimmed.slice(5).trim()
+            if (!chunkData) return
+            const jsonChunk = JSON.parse(chunkData)
+
+            if (jsonChunk.task_id) {
+              businessStore.update_task_id(jsonChunk.task_id)
+            }
+
+            switch (jsonChunk.dataType) {
+              case 't02':
+                if (jsonChunk.data?.content) {
+                  controller.enqueue(JSON.stringify(jsonChunk.data))
+                }
+                break
+              case 't15':
+                if (jsonChunk.data?.type === 'user_input_required') {
+                  controller.enqueue(JSON.stringify({
+                    type: 'user_input_required',
+                    question: jsonChunk.data.question,
+                    threadId: jsonChunk.data.thread_id,
+                  }))
+                }
+                break
+              case 't99':
+                controller.enqueue(JSON.stringify({ done: true }))
+                break
+            }
+          }
+          catch (e) {
+            console.error('Error processing resume chunk:', e)
+          }
+        },
+        flush: (controller: TransformStreamDefaultController) => {
+          controller.terminate()
+        },
+      }),
+    )
+    .getReader()
+
+  if (reader && conversationItems.value[originalIndex]) {
+    // 给同一个 assistant 消息设置新的 reader，继续追加内容
+    conversationItems.value[originalIndex].reader = reader
+    contentLoadingStates.value[
+      visibleConversationItems.value.findIndex(
+        (vi) => vi.uuid === conversationItems.value[originalIndex].uuid && vi.role === 'assistant',
+      )
+    ] = true
+  }
+}
+
 
 // 改为对象存储不同问答类型的uuid
 const uuids = ref<Record<string, string>>({})
@@ -616,9 +749,6 @@ const handleCreateStylized = async (
 
   // 设置背景颜色
   backgroundColorVariable.value = '#f6f7fb'
-
-  // 滚动到底部
-  scrollToBottom()
 
   // 设置初始化数据标识为false
   isInit.value = false
@@ -717,7 +847,10 @@ const handleCreateStylized = async (
   const textContent = inputTextString.value
     ? inputTextString.value
     : send_text
+  // 保存当前选中的技能（在清空前）
+  const currentSelectedSkills = [...slashCmd.selectedSkills.value]
   inputTextString.value = ''
+  slashCmd.clearSelectedSkills()
 
   if (!uuids.value[currentQaType]) {
     uuids.value[currentQaType] = uuidv4()
@@ -768,6 +901,7 @@ const handleCreateStylized = async (
         file_list: upload_file_list,
         qa_type: currentQaType, // Pass qa_type explicitly
         datasource_id: selectedDatasource.value?.id,
+        selected_skills: currentSelectedSkills.length > 0 ? currentSelectedSkills : undefined,
       },
     )
 
@@ -918,6 +1052,21 @@ const scrollToBottom = () => {
   }
 }
 
+// 输入框键盘事件拦截（斜杠命令优先）
+const onInputKeydown = (e: KeyboardEvent) => {
+  // 斜杠命令浮层打开时，优先处理键盘事件
+  if (slashCmd.handleKeydown(e)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  // 原有 Enter 发送逻辑
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleCreateStylized()
+  }
+}
+
 const keys = useMagicKeys()
 const enterCommand = keys.Enter
 const enterCtrl = keys.Enter
@@ -933,6 +1082,9 @@ const isMacos = parser.getOS().name.includes('Mac')
 const placeholder = computed(() => {
   if (stylizingLoading.value) {
     return `输入任意问题...`
+  }
+  if (qa_type.value === 'COMMON_QA') {
+    return `输入 / 选择技能，先思考后回答`
   }
   return `输入任意问题, 按 ${
     isMacos ? 'Command' : 'Ctrl'
@@ -1050,8 +1202,6 @@ const scrollToItem = async (uuid: string) => {
   }
 }
 
-// 默认选中的对话类型
-const qa_type = ref('COMMON_QA')
 const onAqtiveChange = (val, chat_id) => {
   qa_type.value = val
   businessStore.update_qa_type(val)
@@ -1319,7 +1469,7 @@ const fileUploadRef = ref<FileUploadRef | null>(null)
 const pendingUploadFileInfoList = ref([])
 
 // 新增：处理从DefaultPage来的提交
-const handleSubmitFromDefaultPage = (payload: { text: string, mode: string, datasource_id?: number }) => {
+const handleSubmitFromDefaultPage = (payload: { text: string, mode: string, datasource_id?: number, selected_skills?: string[] }) => {
   // 先清空之前的对话数据，确保切换类型时不会显示旧数据
   conversationItems.value = []
 
@@ -1332,6 +1482,13 @@ const handleSubmitFromDefaultPage = (payload: { text: string, mode: string, data
   // 切换对话类型
   onAqtiveChange(payload.mode, '') // Switch mode
   inputTextString.value = payload.text // Set text
+
+  // 设置技能选择（来自 default-page 的斜杠命令）
+  if (payload.selected_skills?.length) {
+    slashCmd.selectedSkills.value = [...payload.selected_skills]
+  } else {
+    slashCmd.selectedSkills.value = []
+  }
 
   // 从默认页开始新对话，更新Key
   chatTransitionKey.value = `new-chat-${Date.now()}`
@@ -2114,11 +2271,21 @@ const handleHistoryClick = async (item: any) => {
                       @praise-fead-back="() => onPraiseFeadBack(index)"
                       @progress-display-change="(hasProgress: boolean) => onProgressDisplayChange(index, hasProgress)"
                       @step-progress="(progress: any) => onStepProgress(index, progress)"
+                      @user-input-required="(data: any) => onUserInputRequired(index, data)"
                       @belittle-feedback="
                         () => onBelittleFeedback(index)
                       "
                       @begin-read="() => onBeginRead(index)"
                       @suggested="(question) => handleCreateStylized(question)"
+                    />
+                    <!-- Agent 交互式提问 -->
+                    <AgentInputRequest
+                      v-if="getAgentInputRequest(item)"
+                      :question="getAgentInputRequest(item)!.question"
+                      :thread-id="getAgentInputRequest(item)!.threadId"
+                      :loading="getAgentInputRequest(item)!.loading"
+                      :answered="getAgentInputRequest(item)!.answered"
+                      @submit="(payload) => onAgentInputSubmit(conversationItems.findIndex((ci) => ci.uuid === item.uuid && ci.role === 'assistant'), payload)"
                     />
                   </div>
                 </div>
@@ -2265,16 +2432,44 @@ const handleHistoryClick = async (item: any) => {
               />
 
               <!-- Middle: Input -->
-              <div class="input-wrapper w-full">
+              <div class="input-wrapper w-full" style="position: relative;">
+                <!-- 技能选择浮层 -->
+                <SkillCommandPopup
+                  v-if="qa_type === 'COMMON_QA'"
+                  :visible="slashCmd.showPopup.value"
+                  :skills="slashCmd.filteredSkills.value"
+                  :filter-text="slashCmd.filterText.value"
+                  :highlight-index="slashCmd.highlightIndex.value"
+                  @select="slashCmd.selectSkill"
+                  @close="slashCmd.closePopup"
+                />
                 <n-input
                   ref="refInputTextString"
                   v-model:value="inputTextString"
                   type="textarea"
-                  placeholder="先思考后回答，解决更有难度的问题"
+                  :placeholder="placeholder"
                   :autosize="{ minRows: 1, maxRows: 6 }"
                   class="custom-chat-input"
-                  @keydown.enter.prevent="handleCreateStylized()"
+                  @keydown="onInputKeydown"
                 />
+                <!-- 已选技能 pills -->
+                <div
+                  v-if="qa_type === 'COMMON_QA' && slashCmd.selectedSkills.value.length > 0"
+                  class="selected-skills-bar"
+                >
+                  <div
+                    v-for="skill in slashCmd.selectedSkills.value"
+                    :key="skill"
+                    class="skill-pill-tag"
+                  >
+                    <div class="i-hugeicons:magic-wand-01 text-12"></div>
+                    <span>{{ skill }}</span>
+                    <div
+                      class="i-hugeicons:cancel-01 text-12 cursor-pointer opacity-60 hover:opacity-100"
+                      @click="slashCmd.removeSkill(skill)"
+                    ></div>
+                  </div>
+                </div>
               </div>
 
               <!-- Bottom: Footer Actions -->
@@ -2881,6 +3076,31 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
   width: 100%;
   margin: 0;
   padding: 0;
+}
+
+.selected-skills-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 2px 0;
+}
+
+.skill-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  background: #f0edff;
+  color: #7e6bf2;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: #e8e3ff;
+  }
 }
 
 .mode-pill {
