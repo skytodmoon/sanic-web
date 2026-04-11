@@ -9,9 +9,10 @@ from common.res_decorator import async_json_resp
 from common.token_decorator import check_token
 from constants.code_enum import SysCodeEnum
 from common.param_parser import parse_params
-from services.llm_service import query_dify_suggested, stop_dify_chat, LLMRequest
+from services.llm_service import query_dify_suggested, stop_dify_chat, LLMRequest, common_agent
 from model.schemas import (
     LLMGetAnswerRequest,
+    ResumeChatRequest,
     DifyGetSuggestedRequest,
     DifyGetSuggestedResponse,
     StopChatRequest,
@@ -105,6 +106,40 @@ async def get_answer(req: Request, body: LLMGetAnswerRequest):
     except Exception as e:
         logging.error(f"Error Invoke diFy: {e}")
         raise MyException(SysCodeEnum.c_9999)
+
+
+@bp.post("/resume_chat")
+@openapi.summary("恢复暂停的Agent对话（流式）")
+@openapi.description("当Agent通过ask_user工具向用户提问后，用户回答通过此接口恢复执行")
+@openapi.tag("对话服务")
+@openapi.body(
+    {"application/json": {"schema": get_schema(ResumeChatRequest)}},
+    description="恢复请求体",
+    required=True,
+)
+@openapi.response(
+    200,
+    {"text/event-stream": {"schema": {"type": "string"}}},
+    description="流式返回数据",
+)
+@check_token
+@parse_params
+async def resume_chat(req: Request, body: ResumeChatRequest):
+    """恢复暂停的Agent对话"""
+    token = req.headers.get("Authorization")
+    if token and token.startswith("Bearer "):
+        token = token.split(" ")[1]
+
+    async def stream_fn(response):
+        await common_agent.resume_agent(
+            response,
+            thread_id=body.thread_id,
+            user_input=body.user_input,
+            user_token=token,
+        )
+
+    response = ResponseStream(stream_fn, content_type="text/event-stream")
+    return response
 
 
 @bp.post("/get_dify_suggested", name="get_dify_suggested")

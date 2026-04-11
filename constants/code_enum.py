@@ -66,6 +66,8 @@ class DataTypeEnum(Enum):
 
     STEP_PROGRESS = ("t14", "步骤进度信息")
 
+    USER_INPUT_REQUIRED = ("t15", "用户输入请求")
+
     STREAM_END = ("t99", "流式推流结束")
 
 

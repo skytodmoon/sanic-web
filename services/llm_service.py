@@ -89,10 +89,14 @@ class LLMRequest:
                 if token.startswith("Bearer "):
                     token = token.split(" ")[1]
 
+            # 获取选中的技能列表
+            selected_skills = req_obj.get("selected_skills")
+
             # 调用智能体
             if qa_type == IntentEnum.COMMON_QA.value[0]:
                 await common_agent.run_agent(
                     query, res, chat_id, uuid_str, token, file_list,
+                    selected_skills=selected_skills,
                 )
                 return None
             elif qa_type == IntentEnum.DATABASE_QA.value[0]:

@@ -1,8 +1,11 @@
 <script lang="ts" setup>
 import type { UploadFileInfo } from 'naive-ui'
+import type { InputInst } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 import { fetch_datasource_list } from '@/api/datasource'
 import { fetch_model_list, set_default_model } from '@/api/aimodel'
+import SkillCommandPopup from '@/components/SkillCommandPopup.vue'
+import { useSlashCommand } from '@/hooks/useSlashCommand'
 import FileUploadManager from '@/views/file/file-upload-manager.vue'
 
 const props = defineProps<{
@@ -12,11 +15,29 @@ const props = defineProps<{
 const emit = defineEmits(['submit'])
 
 const inputValue = ref('')
+const inputRef = ref<InputInst | null>(null)
 const selectedMode = ref<{ label: string, value: string, icon: string, color: string } | null>(null)
 const datasourceList = ref<any[]>([])
 const selectedDatasource = ref<any>(null)
 const showDatasourcePopover = ref(false)
 const showReportQaDatasourcePopover = ref(false)
+
+// 斜杠命令 - 技能选择（仅在智能问答或未选择模式时可用）
+const slashCmd = useSlashCommand(inputRef, inputValue, computed(() => !selectedMode.value || selectedMode.value.value === 'COMMON_QA'))
+
+// 输入框键盘事件拦截（斜杠命令优先）
+const onInputKeydown = (e: KeyboardEvent) => {
+  if (slashCmd.handleKeydown(e)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  // 原有 Enter 发送逻辑
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleEnter()
+  }
+}
 
 // LLM 模型列表（下拉选择）
 const llmModels = ref<any[]>([])
@@ -195,20 +216,13 @@ const handleEnter = (e?: KeyboardEvent) => {
 
   emit('submit', {
     text: inputValue.value,
-    mode: selectedMode.value?.value || 'COMMON_QA', // Default to Smart QA if nothing selected
+    mode: selectedMode.value?.value || 'COMMON_QA',
     datasource_id: selectedDatasource.value?.id,
+    selected_skills: (!selectedMode || selectedMode.value?.value === 'COMMON_QA') && slashCmd.selectedSkills.value.length > 0 ? [...slashCmd.selectedSkills.value] : undefined,
   })
-  // We don't clear inputValue here immediately because parent might handle it,
-  // but typically we should.
-  // However, pendingUploadFileInfoList should probably be cleared by parent or here?
-  // Let's clear them here to reset state for next time if we stay on this page (unlikely)
   inputValue.value = ''
   pendingUploadFileInfoList.value = []
-  // Clear datasource selection if needed, or keep it?
-  // Requirement says "Input box shows selected datasource", so maybe keep it until cleared.
-  // But typically submit resets the input area.
-  // Let's reset it for now as we are likely navigating away or resetting the view.
-  // selectedDatasource.value = null
+  slashCmd.clearSelectedSkills()
 }
 
 const chips = [
@@ -350,15 +364,47 @@ const bottomIcons = [
         </div>
 
         <!-- Middle: Input -->
-        <div class="input-wrapper w-full">
+        <div
+          class="input-wrapper w-full"
+          style="position: relative;"
+        >
+          <!-- 技能选择浮层 -->
+          <SkillCommandPopup
+            v-if="!selectedMode || selectedMode?.value === 'COMMON_QA'"
+            :visible="slashCmd.showPopup.value"
+            :skills="slashCmd.filteredSkills.value"
+            :filter-text="slashCmd.filterText.value"
+            :highlight-index="slashCmd.highlightIndex.value"
+            @select="slashCmd.selectSkill"
+            @close="slashCmd.closePopup"
+          />
           <n-input
+            ref="inputRef"
             v-model:value="inputValue"
             type="textarea"
             :placeholder="placeholderText"
             :autosize="{ minRows: 3, maxRows: 8 }"
             class="custom-input"
-            @keydown.enter.prevent="handleEnter"
+            @keydown="onInputKeydown"
           />
+          <!-- 已选技能 pills -->
+          <div
+            v-if="(!selectedMode || selectedMode?.value === 'COMMON_QA') && slashCmd.selectedSkills.value.length > 0"
+            class="selected-skills-bar"
+          >
+            <div
+              v-for="skill in slashCmd.selectedSkills.value"
+              :key="skill"
+              class="skill-pill-tag"
+            >
+              <div class="i-hugeicons:magic-wand-01 text-12"></div>
+              <span>{{ skill }}</span>
+              <div
+                class="i-hugeicons:cancel-01 text-12 cursor-pointer opacity-60 hover:opacity-100"
+                @click="slashCmd.removeSkill(skill)"
+              ></div>
+            </div>
+          </div>
         </div>
 
         <!-- Bottom: Footer Actions -->
@@ -762,6 +808,31 @@ $shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 .input-wrapper {
   width: 100%;
   margin: 8px 0;
+}
+
+.selected-skills-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 2px 0;
+}
+
+.skill-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  background: #f0edff;
+  color: #7e6bf2;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: #e8e3ff;
+  }
 }
 
 .custom-input {

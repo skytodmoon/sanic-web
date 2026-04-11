@@ -460,6 +460,13 @@ class LLMGetAnswerRequest(BaseModel):
     selected_skills: Optional[List[str]] = Field(None, description="选中的技能名称列表")
 
 
+class ResumeChatRequest(BaseModel):
+    """恢复暂停的 Agent 对话"""
+
+    thread_id: str = Field(description="对话线程ID")
+    user_input: str = Field(description="用户输入的回答")
+
+
 class DifyGetSuggestedRequest(BaseModel):
     """获取Dify问题建议请求"""
 

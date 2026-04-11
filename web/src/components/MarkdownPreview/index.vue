@@ -36,6 +36,7 @@ const emit = defineEmits([
   'suggested',
   'progress-display-change',
   'step-progress',
+  'user-input-required',
 ])
 
 const { copy, copyDuration } = useClipText()
@@ -239,6 +240,11 @@ const readTextStream = async () => {
       // 处理步骤进度信息
       if (stream.progress) {
         emit('step-progress', stream.progress)
+      }
+
+      // 处理 Agent 用户输入请求
+      if ((stream as any).userInputRequired) {
+        emit('user-input-required', (stream as any).userInputRequired)
       }
 
       // 每条消息换行显示
@@ -916,6 +922,9 @@ const currentQaOption = computed(() => {
   background-color: #fff;
   padding: 1px 0;
   color: $text-color-primary;
+  overflow-x: hidden;
+  max-width: 100%;
+  word-break: break-word;
 
   // 使用 Plus Jakarta Sans 字体 - 参考千问网站
   font-family: "Plus Jakarta Sans", $font-family-base !important;
@@ -938,6 +947,26 @@ const currentQaOption = computed(() => {
   // 代码块保持等宽字体
   code, pre, kbd, samp {
     font-family: $font-family-mono !important;
+    overflow-wrap: break-word;
+    word-break: break-all;
+  }
+
+  // 代码块防止横向溢出，内容自动换行
+  pre {
+    overflow-x: hidden;
+    max-width: 100%;
+    background: #f8f8f8;
+    padding: 12px 16px;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  // 工具输出区域（details/summary）防止横向溢出
+  details {
+    max-width: 100%;
+    overflow-x: hidden;
+    word-break: break-word;
   }
 
   // 标题样式

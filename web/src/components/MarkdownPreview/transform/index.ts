@@ -14,9 +14,17 @@ type ProgressResult = {
   progress: any
   content?: never
   done?: never
+  userInputRequired?: never
 }
 
-type TransformResult = ContentResult | DoneResult | ProgressResult
+type UserInputRequiredResult = {
+  userInputRequired: any
+  content?: never
+  done?: never
+  progress?: never
+}
+
+type TransformResult = ContentResult | DoneResult | ProgressResult | UserInputRequiredResult
 type TransformFunction<T = any> = (rawValue: T, ...args: any) => TransformResult
 
 /**
@@ -95,6 +103,12 @@ export const transformStreamValue: Record<
         if (json && json.type === 'step_progress' && json.step && json.stepName && json.status && json.progressId) {
           return {
             progress: json,
+          }
+        }
+        // 检查是否是用户输入请求
+        if (json && json.type === 'user_input_required' && json.question) {
+          return {
+            userInputRequired: json,
           }
         }
         // 提取 messageType/content 格式的数据（store 解析 t02 后传来的）

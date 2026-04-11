@@ -19,6 +19,8 @@ from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from agent.deepagent.tools.tool_call_manager import get_tool_call_manager
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphInterrupt
+from langgraph.types import Command
 from common.llm_util import get_llm
 from common.minio_util import MinioUtils
 from constants.code_enum import DataTypeEnum, IntentEnum
@@ -194,19 +196,29 @@ class EnhancedCommonAgent:
         system_prompt: Optional[str] = None,
         mcp_tools: Optional[list] = None,
         session_workdir: Optional[Path] = None,
+        selected_skills: Optional[list] = None,
     ):
         """创建 deep agent 实例
 
         Args:
             mcp_tools: 预获取的 MCP 工具列表，为 None 时内部获取
             session_workdir: session 级工作目录，优先于全局 agent_workspace_dir
+            selected_skills: 用户选中的技能名称列表，为 None 时使用所有已启用技能
         """
         if mcp_tools is None:
             mcp_tools = await self._get_mcp_tools()
 
+        from agent.common.tools.ask_user_tool import ask_user
         from services.skill_service import SkillService
 
-        skill_paths = str(current_dir / "skills")
+        # 根据用户选择加载技能
+        if selected_skills:
+            skill_paths_list = SkillService.get_enabled_skill_paths(selected_skills, scope="common")
+        else:
+            skill_paths_list = [str(current_dir / "skills")]
+
+        # 注入 ask_user 工具，让 Agent 可以向用户提问
+        all_tools = (mcp_tools or []) + [ask_user]
 
         model = get_llm(timeout=self.DEFAULT_LLM_TIMEOUT)
         workdir = session_workdir or agent_workspace_dir
@@ -218,10 +230,10 @@ class EnhancedCommonAgent:
 
         return create_deep_agent(
             model=model,
-            tools=mcp_tools,
+            tools=all_tools,
             system_prompt=system_prompt,
             memory=memory,
-            skills=[skill_paths],
+            skills=skill_paths_list,
             backend=LocalShellBackend(
                 root_dir=str(workdir),
                 inherit_env=True,
@@ -369,6 +381,7 @@ class EnhancedCommonAgent:
                 return
             tracker.current_phase = Phase.EXECUTION
             tracker.has_tool_called = True
+            tracker.has_sent_content = False
             await self._send_phase_progress(
                 response, Phase.EXECUTION, "start", progress_id
             )
@@ -449,11 +462,16 @@ class EnhancedCommonAgent:
 
                     # 工具切换时输出标签
                     if tool_name != tracker.current_tool_name:
+                        # 同一个工具连续调用时，输出之间加换行分隔
+                        if tracker.current_tool_name and tracker.has_sent_content:
+                            await write_and_collect("\n\n")
                         tracker.current_tool_name = tool_name
+                        tracker.has_sent_content = False
                         await write_and_collect(_format_tool_label(tool_name))
 
                     if text:
                         await write_and_collect(text)
+                        tracker.has_sent_content = True
                     continue
 
                 # ===== 非工具节点的 AI 文本 =====
@@ -473,6 +491,37 @@ class EnhancedCommonAgent:
                 await write_and_collect(SECTION_CLOSE)
                 tracker.execution_opened = False
 
+        except GraphInterrupt as e:
+            # Agent 调用了 ask_user 工具，暂停执行等待用户输入
+            if tracker.execution_opened:
+                await write_and_collect(SECTION_CLOSE)
+                tracker.execution_opened = False
+
+            # 从中断值提取问题
+            question = "请提供更多信息"
+            if e.interrupts:
+                interrupt_value = e.interrupts[0].value
+                if isinstance(interrupt_value, dict):
+                    question = interrupt_value.get("question", question)
+                elif isinstance(interrupt_value, str):
+                    question = interrupt_value
+
+            thread_id = config.get("configurable", {}).get("thread_id", "")
+            # 发送 t15 用户输入请求
+            interrupt_data = {
+                "data": {
+                    "type": "user_input_required",
+                    "question": question,
+                    "thread_id": thread_id,
+                },
+                "dataType": "t15",
+            }
+            await response.write(
+                "data:" + json.dumps(interrupt_data, ensure_ascii=False) + "\n\n"
+            )
+            # 不发送 t99 流结束标记，对话处于暂停状态
+            logger.info(f"Agent 暂停等待用户输入: thread_id={thread_id}, question={question}")
+            return
         except asyncio.CancelledError:
             await self._safe_write(response, "\n> 这条消息已停止", "info")
             await self._safe_write(response, "", "end")
@@ -494,6 +543,7 @@ class EnhancedCommonAgent:
         uuid_str: str = None,
         user_token=None,
         file_list: dict = None,
+        selected_skills: list = None,
     ):
         """
         运行增强智能体
@@ -556,6 +606,7 @@ class EnhancedCommonAgent:
                 system_prompt=None,
                 mcp_tools=mcp_tools,
                 session_workdir=session_workdir,
+                selected_skills=selected_skills,
             )
 
             # 带超时保护的任务
@@ -668,6 +719,178 @@ class EnhancedCommonAgent:
                     pass
             if task_id in self.running_tasks:
                 del self.running_tasks[task_id]
+
+    async def resume_agent(
+        self,
+        response,
+        thread_id: str,
+        user_input: str,
+        user_token: str = None,
+    ):
+        """恢复暂停的 Agent，将用户回答注入并继续执行"""
+        # JWT 解码获取用户信息
+        user_dict = await decode_jwt_token(user_token)
+        task_id = user_dict["id"]
+        task_context = {"cancelled": False}
+        self.running_tasks[task_id] = task_context
+
+        try:
+            t02_answer_data = []
+
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "user_id": str(task_id),
+                },
+                "recursion_limit": self.DEFAULT_RECURSION_LIMIT,
+            }
+
+            mcp_tools = await self._get_mcp_tools()
+            agent = await self._create_agent(
+                system_prompt=None,
+                mcp_tools=mcp_tools,
+            )
+
+            # 使用 Command(resume=...) 恢复 LangGraph 执行
+            # 传入 None 作为 input，通过 Command 提供恢复值
+            task = asyncio.create_task(
+                self._stream_resume_response(
+                    agent, config, user_input, response, task_id, t02_answer_data
+                )
+            )
+
+            await asyncio.wait_for(task, timeout=self.TASK_TIMEOUT)
+
+            # 发送结束标记
+            if not task_context.get("cancelled"):
+                await response.write(
+                    "data:"
+                    + json.dumps(
+                        {"data": "DONE", "dataType": DataTypeEnum.STREAM_END.value[0]},
+                        ensure_ascii=False,
+                    )
+                    + "\n\n"
+                )
+
+        except asyncio.TimeoutError:
+            await self._safe_write(response, "\n> 任务超时，已自动停止", "info")
+            await self._safe_write(response, "", "end")
+        except Exception as e:
+            logger.error(f"Resume agent 异常: {e}", exc_info=True)
+            await self._safe_write(
+                response, f"[ERROR] 恢复执行异常: {str(e)[:200]}", "error"
+            )
+        finally:
+            if task_id in self.running_tasks:
+                del self.running_tasks[task_id]
+
+    async def _stream_resume_response(
+        self, agent, config, user_input, response, session_id, answer_collector
+    ):
+        """恢复执行的流式响应处理"""
+        import uuid
+
+        tracker = PhaseTracker()
+        tracker.current_phase = Phase.EXECUTION
+        last_keepalive = asyncio.get_event_loop().time()
+        progress_id = str(uuid.uuid4())
+
+        async def write_and_collect(content: str):
+            await self._safe_write(response, content)
+            answer_collector.append(content)
+
+        try:
+            # 使用 Command(resume=user_input) 恢复暂停的 graph
+            async for mode, chunk in agent.astream(
+                Command(resume=user_input),
+                config,
+                stream_mode=["messages", "updates"],
+            ):
+                if self.running_tasks.get(session_id, {}).get("cancelled"):
+                    await self._safe_write(response, "\n> 这条消息已停止", "info")
+                    return
+
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_keepalive >= self.STREAM_KEEPALIVE_INTERVAL:
+                    try:
+                        await response.write(": keepalive\n\n")
+                        last_keepalive = current_time
+                    except Exception:
+                        pass
+
+                if mode == "updates":
+                    if isinstance(chunk, dict):
+                        for node_name, node_output in chunk.items():
+                            if not isinstance(node_output, dict):
+                                continue
+                            todos = node_output.get("todos")
+                            if todos and isinstance(todos, list):
+                                await write_and_collect(_format_todos(todos))
+                    continue
+
+                message_chunk, metadata = chunk
+                langgraph_node = metadata.get("langgraph_node", "")
+                text = (
+                    self._extract_text(message_chunk.content)
+                    if hasattr(message_chunk, "content")
+                    else ""
+                )
+
+                if langgraph_node == "tools":
+                    tool_name = getattr(message_chunk, "name", None) or "未知工具"
+                    if tool_name == "write_todos":
+                        continue
+                    if tool_name != tracker.current_tool_name:
+                        # 同一个工具连续调用时，输出之间加换行分隔
+                        if tracker.current_tool_name and tracker.has_sent_content:
+                            await write_and_collect("\n\n")
+                        tracker.current_tool_name = tool_name
+                        tracker.has_sent_content = False
+                        await write_and_collect(_format_tool_label(tool_name))
+                    if text:
+                        await write_and_collect(text)
+                        tracker.has_sent_content = True
+                    continue
+
+                if not text:
+                    continue
+
+                if tracker.current_phase == Phase.EXECUTION:
+                    tracker.current_tool_name = ""
+                    tracker.current_phase = Phase.REPORTING
+
+                await write_and_collect(text)
+
+        except GraphInterrupt as e:
+            # Agent 再次调用 ask_user，继续暂停
+            question = "请提供更多信息"
+            if e.interrupts:
+                interrupt_value = e.interrupts[0].value
+                if isinstance(interrupt_value, dict):
+                    question = interrupt_value.get("question", question)
+                elif isinstance(interrupt_value, str):
+                    question = interrupt_value
+
+            thread_id = config.get("configurable", {}).get("thread_id", "")
+            interrupt_data = {
+                "data": {
+                    "type": "user_input_required",
+                    "question": question,
+                    "thread_id": thread_id,
+                },
+                "dataType": "t15",
+            }
+            await response.write(
+                "data:" + json.dumps(interrupt_data, ensure_ascii=False) + "\n\n"
+            )
+            return
+        except asyncio.CancelledError:
+            await self._safe_write(response, "\n> 这条消息已停止", "info")
+        except Exception as e:
+            logger.error(f"Resume 流式响应异常: {e}", exc_info=True)
+            await self._safe_write(
+                response, f"[ERROR] 响应异常: {str(e)[:100]}", "error"
+            )
 
     async def cancel_task(self, task_id: str) -> bool:
         """取消指定的任务"""
