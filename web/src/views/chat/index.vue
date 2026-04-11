@@ -642,6 +642,7 @@ const handleCreateStylized = async (
   if (stylizingLoading.value) {
     // 停止dify 对话
     await GlobalAPI.stop_chat(businessStore.$state.task_id, currentQaType)
+    stylizingLoading.value = false
     onCompletedReader(conversationItems.value.length - 1)
     // 隐藏加载提示动画
     contentLoadingStates.value = contentLoadingStates.value.map(() => false)
@@ -2504,8 +2505,8 @@ const handleHistoryClick = async (item: any) => {
                   <button
                     type="button"
                     class="send-btn-circle"
-                    :class="{ disabled: !inputTextString && !pendingUploadFileInfoList?.length }"
-                    :disabled="!inputTextString && !pendingUploadFileInfoList?.length"
+                    :class="{ disabled: !inputTextString && !pendingUploadFileInfoList?.length && !stylizingLoading }"
+                    :disabled="!inputTextString && !pendingUploadFileInfoList?.length && !stylizingLoading"
                     aria-label="发送"
                     @click="handleCreateStylized()"
                   >

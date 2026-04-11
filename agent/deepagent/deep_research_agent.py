@@ -136,6 +136,8 @@ class DeepAgent:
     def __init__(self):
         self.tool_manager = get_tool_call_manager()
         self.available_skills = self._load_available_skills()
+        # 存储运行中的任务：task_id -> {"cancelled": bool, "session_id": str}
+        self.running_tasks = {}
 
         # 从环境变量读取配置
         self.RECURSION_LIMIT = int(
@@ -436,6 +438,9 @@ class DeepAgent:
         # 重置工具调用状态
         self.tool_manager.reset_session(effective_session_id)
 
+        # 注册任务用于取消跟踪
+        self.running_tasks[task_id] = {"cancelled": False, "session_id": effective_session_id}
+
         start_time = time.time()
         connection_closed = False
         # 收集所有输出内容，流结束后写入 t_user_qa_record
@@ -476,6 +481,7 @@ class DeepAgent:
                                 response,
                                 effective_session_id,
                                 answer_collector,
+                                task_id,
                             ),
                             timeout=self.TASK_TIMEOUT,
                         )
@@ -488,6 +494,7 @@ class DeepAgent:
                             response,
                             effective_session_id,
                             answer_collector,
+                            task_id,
                         ),
                         timeout=self.TASK_TIMEOUT,
                     )
@@ -570,6 +577,10 @@ class DeepAgent:
                 f"耗时: {elapsed:.2f}秒, 工具调用统计: {stats}"
             )
 
+            # 清理任务记录
+            if task_id in self.running_tasks:
+                del self.running_tasks[task_id]
+
     # ==================== 核心流处理 ====================
 
     async def _stream_response(
@@ -580,6 +591,7 @@ class DeepAgent:
         response,
         session_id: str,
         answer_collector: list,
+        task_id: str = None,
     ) -> bool:
         """
         处理 agent 流式响应，多阶段实时推送到前端
@@ -647,6 +659,21 @@ class DeepAgent:
                         f"\n> ⚠️ **执行中止**\n\n{ctx.termination_reason}",
                         "warning",
                         DataTypeEnum.ANSWER.value[0],
+                    )
+                    break
+
+                # ---- 2.1 检查任务取消标记 ----
+                if task_id and task_id in self.running_tasks and self.running_tasks[task_id].get("cancelled"):
+                    logger.info(f"任务被取消 - task_id: {task_id}")
+                    await self._close_sections(response, tracker)
+                    await self._safe_write(
+                        response,
+                        "\n> 这条消息已停止",
+                        "info",
+                        DataTypeEnum.ANSWER.value[0],
+                    )
+                    await self._safe_write(
+                        response, "", "end", DataTypeEnum.STREAM_END.value[0]
                     )
                     break
 
@@ -879,4 +906,8 @@ class DeepAgent:
     async def cancel_task(self, task_id: str) -> bool:
         """取消任务（兼容接口，供 llm_service 调用）"""
         logger.info(f"收到取消请求: {task_id}")
+        if task_id in self.running_tasks:
+            self.running_tasks[task_id]["cancelled"] = True
+            logger.info(f"任务已标记取消: {task_id}")
+            return True
         return False

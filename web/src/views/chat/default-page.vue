@@ -3,7 +3,6 @@ import type { UploadFileInfo } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 import { fetch_datasource_list } from '@/api/datasource'
 import { fetch_model_list, set_default_model } from '@/api/aimodel'
-import { fetch_skill_list } from '@/api/skill'
 import FileUploadManager from '@/views/file/file-upload-manager.vue'
 
 const props = defineProps<{
@@ -18,9 +17,6 @@ const datasourceList = ref<any[]>([])
 const selectedDatasource = ref<any>(null)
 const showDatasourcePopover = ref(false)
 const showReportQaDatasourcePopover = ref(false)
-const showSkillModal = ref(false)
-const skillList = ref<Array<{ name: string; description: string }>>([])
-const loadingSkills = ref(false)
 
 // LLM 模型列表（下拉选择）
 const llmModels = ref<any[]>([])
@@ -259,44 +255,6 @@ const clearMode = () => {
   showReportQaDatasourcePopover.value = false
 }
 
-const loadSkills = async () => {
-  if (loadingSkills.value) return
-  loadingSkills.value = true
-  try {
-    const res = await fetch_skill_list()
-    const data = await res.json()
-
-    if (res.ok && data.code === 200) {
-      // 装饰器已经包装了响应，data.data 就是技能数组
-      if (Array.isArray(data.data)) {
-        skillList.value = data.data
-      } else {
-        skillList.value = []
-      }
-    } else {
-      window.$ModalMessage?.error?.(data.msg || '加载技能列表失败')
-      skillList.value = []
-    }
-  } catch (e) {
-    window.$ModalMessage?.error?.('加载技能列表失败')
-    skillList.value = []
-  } finally {
-    loadingSkills.value = false
-  }
-}
-
-const handleSkillDotClick = () => {
-  if (!showSkillModal.value) {
-    // 打开弹框时加载数据
-    if (skillList.value.length === 0) {
-      loadSkills()
-    }
-    showSkillModal.value = true
-  } else {
-    showSkillModal.value = false
-  }
-}
-
 const bottomIcons = [
   // Define if needed, or remove if not used in new design
 ]
@@ -433,68 +391,6 @@ const bottomIcons = [
                   @click.stop="clearMode"
                 ></div>
               </div>
-              <!-- 深度问数模式显示技能小点 - 独立显示在右侧 -->
-              <n-popover
-                v-if="selectedMode.value === 'REPORT_QA'"
-                trigger="manual"
-                v-model:show="showSkillModal"
-                placement="bottom-start"
-                :show-arrow="true"
-                style="padding: 0; max-width: 320px;"
-                @clickoutside="showSkillModal = false"
-              >
-                <template #trigger>
-                  <div
-                    class="skill-dot-wrapper"
-                    :style="{ color: selectedMode.color }"
-                    @click.stop="handleSkillDotClick"
-                  >
-                    <div class="skill-dot"></div>
-                  </div>
-                </template>
-                <div class="skill-popover-content">
-                  <div class="skill-popover-header">
-                    <div class="skill-popover-title">
-                      <div class="i-hugeicons:magic-wand-01 text-18 mr-2" style="color: #8b5cf6;"></div>
-                      <span class="font-semibold">可用技能</span>
-                    </div>
-                  </div>
-                  <div class="skill-list-container">
-                    <div
-                      v-if="loadingSkills"
-                      class="flex items-center justify-center py-8"
-                    >
-                      <n-spin size="small" />
-                      <span class="ml-2 text-gray-500">加载中...</span>
-                    </div>
-                    <div
-                      v-else-if="skillList.length === 0"
-                      class="flex flex-col items-center justify-center py-8 text-gray-400"
-                    >
-                      <div class="i-hugeicons:search-02 text-24 opacity-20 mb-2"></div>
-                      <span class="text-13">暂无可用技能</span>
-                    </div>
-                    <div
-                      v-else
-                      class="skill-list"
-                    >
-                      <div
-                        v-for="skill in skillList"
-                        :key="skill.name"
-                        class="skill-item"
-                      >
-                        <div class="skill-item-header">
-                          <div class="skill-icon i-hugeicons:magic-wand-01 text-16"></div>
-                          <span class="skill-name">{{ skill.name }}</span>
-                        </div>
-                        <div class="skill-description">
-                          {{ skill.description || '暂无描述' }}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </n-popover>
             </template>
 
             <!-- If NO mode selected, show chips row inside -->
@@ -1086,139 +982,5 @@ $shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
       background: color.adjust($border-color, $lightness: -10%);
     }
   }
-}
-
-// ============================================
-// 技能相关样式
-// ============================================
-.skill-dot-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-radius: 50%;
-  background-color: transparent;
-
-  &:hover {
-    background-color: rgba(139, 92, 246, 0.1);
-    transform: scale(1.1);
-  }
-}
-
-.skill-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: currentColor;
-  display: block;
-  transition: all 0.2s ease;
-  box-shadow: 0 0 4px currentColor;
-}
-
-.skill-popover-content {
-  background: white;
-  border-radius: $radius-lg;
-  overflow: hidden;
-  box-shadow: $shadow-xl;
-  width: 100%;
-  max-width: 320px;
-}
-
-.skill-popover-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid $border-color;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(139, 92, 246, 0.02) 100%);
-  flex-shrink: 0;
-}
-
-.skill-popover-title {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  color: $text-primary;
-  font-family: $font-family-base;
-}
-
-.skill-list-container {
-  max-height: 360px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 10px 12px;
-  background: white;
-  -webkit-overflow-scrolling: touch;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: $border-color;
-    border-radius: 3px;
-
-    &:hover {
-      background: color.adjust($border-color, $lightness: -10%);
-    }
-  }
-}
-
-.skill-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.skill-item {
-  padding: 12px 14px;
-  border-radius: $radius-md;
-  border: 1px solid $border-color;
-  background-color: $bg-subtle;
-  transition: all 0.2s ease;
-  cursor: default;
-  flex-shrink: 0;
-
-  &:hover {
-    border-color: rgba(139, 92, 246, 0.3);
-    background-color: rgba(139, 92, 246, 0.05);
-    transform: translateY(-1px);
-    box-shadow: $shadow-sm;
-  }
-}
-
-.skill-item-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.skill-icon {
-  color: $info-color;
-  flex-shrink: 0;
-  font-size: 14px;
-}
-
-.skill-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: $text-primary;
-  font-family: $font-family-base;
-  text-transform: capitalize;
-  word-break: break-word;
-}
-
-.skill-description {
-  font-size: 12px;
-  color: $text-secondary;
-  line-height: 1.5;
-  margin-left: 22px;
-  font-family: $font-family-base;
-  word-break: break-word;
 }
 </style>
