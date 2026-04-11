@@ -1,6 +1,6 @@
 services:
   aix-db:
-    image: crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.3
+    image: crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.4
     container_name: aix-db
     restart: unless-stopped
     environment:
@@ -17,9 +17,8 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
-      # 前端 PageAgent 开关（运行时注入）
       VITE_ENABLE_PAGE_AGENT: ${VITE_ENABLE_PAGE_AGENT:-}
-
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-65536}
     ports:
       # 前端（通过 nginx）
       - "18080:80"
@@ -43,9 +42,10 @@ services:
       - ./volume/logs/aix-db:/var/log/aix-db
       - ./volume/logs/minio:/var/log/minio
       - ./volume/logs/postgresql:/var/log/postgresql
-      # 技能目录持久化
-      - ./volume/skills:/aix-db/agent/common/skills
-
+      # 技能目录（挂载源代码目录，实时生效）
+      - ../agent/common/skills:/aix-db/agent/common/skills
+      - ../agent/deepagent/skills:/aix-db/agent/deepagent/skills
+      - ../agent/common/agent_workspace:/aix-db/agent/common/agent_workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

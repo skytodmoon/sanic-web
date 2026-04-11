@@ -1,7 +1,7 @@
 # ============================================================
 # AIX-DB 应用镜像 (App Image)
 # 基于基础镜像，构建前端 + 复制后端源代码
-# 
+#
 # 构建时机：每次发版或修复 bug 时
 # 构建命令：make build
 # 构建时间：~1-2分钟（含前端构建）
@@ -48,12 +48,6 @@ COPY serv.py ./
 
 # 复制文档目录
 COPY docs/ docs/
-
-# 确保技能安装目录存在
-RUN mkdir -p /aix-db/agent/common/skills
-
-# 安装幻灯片生成所需的 Node.js 全局包
-RUN npm install -g pptxgenjs --no-fund --no-audit
 
 # 清理源代码中的缓存文件（不清理 .venv 目录）
 RUN find . -path "./.venv" -prune -o -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
