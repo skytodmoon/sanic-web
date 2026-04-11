@@ -44,7 +44,8 @@ services:
       - ./volume/logs/minio:/var/log/minio
       - ./volume/logs/postgresql:/var/log/postgresql
       # 技能目录持久化
-      - ./volume/skills:/aix-db/agent/common/skills
+      - ./volume/skills/common:/aix-db/agent/common/skills
+      - ./volume/skills/deepagent:/aix-db/agent/deepagent/skills
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
