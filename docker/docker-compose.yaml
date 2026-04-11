@@ -1,6 +1,6 @@
 services:
   aix-db:
-    image: crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.3
+    image: crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.4
     container_name: aix-db
     restart: unless-stopped
     environment:
@@ -43,10 +43,10 @@ services:
       - ./volume/logs/aix-db:/var/log/aix-db
       - ./volume/logs/minio:/var/log/minio
       - ./volume/logs/postgresql:/var/log/postgresql
-      # 技能目录持久化
-      - ./volume/skills/common:/aix-db/agent/common/skills
-      - ./volume/skills/deepagent:/aix-db/agent/deepagent/skills
-
+      # 技能目录（挂载源代码目录，实时生效）
+      - ../agent/common/skills:/aix-db/agent/common/skills
+      - ../agent/deepagent/skills:/aix-db/agent/deepagent/skills
+      - ../agent/common/agent_workspace:/aix-db/agent/common/agent_workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

@@ -5,7 +5,7 @@
 
 # 项目名称和应用版本
 PROJECT_NAME = aix-db
-VERSION = 1.2.3
+VERSION = 1.2.4
 
 # 基础镜像版本（依赖变更时更新此版本号）
 BASE_VERSION = 1.0.0

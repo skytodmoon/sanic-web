@@ -27,7 +27,7 @@ declare global {
   }
 }
 
-const PAGE_AGENT_MODEL = 'qwen3.5-plus'
+let PAGE_AGENT_MODEL = ''
 
 const agentInstance = shallowRef<PageAgent | null>(null)
 const agentReady = ref(false)
@@ -248,6 +248,11 @@ export function usePageAgent() {
       return null
     }
 
+    if (!PAGE_AGENT_MODEL) {
+      console.warn('[PageAgent] 模型未设置，请先调用 initFromDefaultModel 获取模型')
+      return null
+    }
+
     if (agentInstance.value) {
       destroyAgent()
     }
@@ -309,8 +314,15 @@ export function usePageAgent() {
         return
       }
 
+      if (!defaultModel.base_model) {
+        console.warn('[PageAgent] 默认模型缺少 name 字段:', defaultModel)
+        return
+      }
+
+      PAGE_AGENT_MODEL = defaultModel.base_model
+
       if (!defaultModel.api_domain) {
-        console.warn('[PageAgent] 默认模型缺少 api_domain:', defaultModel.name)
+        console.warn('[PageAgent] 默认模型缺少 api_domain:', defaultModel.base_model)
         return
       }
 
