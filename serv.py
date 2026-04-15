@@ -54,8 +54,10 @@ async def ensure_logging_config(app, loop):
     if not root_logger.handlers or root_logger.level > logging.INFO:
         # 重新加载日志配置
         load_env()
+
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
+
         logging.info(
             "✅ [SERV] Logging configuration reloaded in worker - handlers: %d, level: %s",
             len(root_logger.handlers),
@@ -80,14 +82,10 @@ async def init_minio(app, loop):
 
         minio_utils = MinioUtils()
         minio_utils.ensure_bucket(default_bucket)
-        logger.info(
-            f"✅ [SERV] MinIO bucket '{default_bucket}' initialized successfully"
-        )
+        logger.info(f"✅ [SERV] MinIO bucket '{default_bucket}' initialized successfully")
     except Exception as e:
         # MinIO 初始化失败不阻止服务启动，只记录警告
-        logger.warning(
-            f"⚠️ [SERV] MinIO initialization failed: {e}. File upload features may not work."
-        )
+        logger.warning(f"⚠️ [SERV] MinIO initialization failed: {e}. File upload features may not work.")
 
 
 autodiscover(
@@ -123,12 +121,18 @@ app.route("/")(lambda _: empty())
 
 def get_server_config():
     """获取服务器配置参数"""
-    return {
+    workers = int(os.getenv("SERVER_WORKERS", 2))
+    config = {
         "host": os.getenv("SERVER_HOST", "0.0.0.0"),
         "port": int(os.getenv("SERVER_PORT", 8088)),
-        "workers": int(os.getenv("SERVER_WORKERS", 2)),
         "auto_reload": False,
     }
+    if workers == 1:
+        # 单进程模式：开发环境推荐，PyCharm 可正确管理进程生命周期
+        config["single_process"] = True
+    else:
+        config["workers"] = workers
+    return config
 
 
 if __name__ == "__main__":
