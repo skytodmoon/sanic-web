@@ -39,7 +39,7 @@ services:
       # 日志目录（可选）
       - ./volume/logs/supervisor:/var/log/supervisor
       - ./volume/logs/nginx:/var/log/nginx
-      - ./volume/logs/aix-db:/var/log/aix-db
+      - ./volume/logs/aix-db:/var/log/aix-dbÅ
       - ./volume/logs/minio:/var/log/minio
       - ./volume/logs/postgresql:/var/log/postgresql
       # 技能目录（挂载源代码目录，实时生效）
